@@ -1,0 +1,3156 @@
+---
+title: "Análisis de las Zonas de Servicio de Estacionamiento Regulado de Madrid. Sistema Inteligente de Búsqueda de Aparcamiento."
+subtitle: "Trabajo de Fin de Máster. Máster en Big Data y Business Analytics. Universidad Nacional de Educación a Distancia."
+author: "Carlota López Quesada"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true       
+    toc_depth: 3
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{css, echo=FALSE}
+body {
+  font-family: Arial;
+  font-size: 10pt;
+}
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introducción {#introduccion}
+
+En la actualidad, encontrar aparcamiento es uno de los mayores problemas que encuentran los conductores españoles en su día a día.
+Vega (2024) menciona en un artículo del medio Business Insider que el 76% de los conductores en España estima que la falta de aparcamiento es el principal problema de movilidad urbana que tienen en su ciudad, siendo Madrid una de las poblaciones más afectadas.
+La situación se vuelve aún más complicada en el centro de las ciudades debido al tráfico constante y al gran volumen de vehículos.
+Este problema no solo conlleva una pérdida de tiempo y de combustible para los usuarios de las carreteras si no también un impacto medioambiental negativo por la contaminación que supone.
+Debido a que uno de los objetivos más ambiciosos en el presente es la transformación de las ciudades en modelos más sostenibles e inteligentes, las conocidas como *smart cities*, una gestión eficiente del aparcamiento es clave para reducir la contaminación y mejorar el tránsito de las carreteras.
+
+El objetivo de este trabajo es analizar y segmentar las distintas zonas de Servicio de Estacionamiento Regulado de la ciudad de Madrid en base a la facilidad de encontrar una plaza de aparcamiento libre en ellas.
+Este proyecto surge del interés por aplicar la ciencia de datos a un problema con impacto social y medioambiental de gran relevancia como es la gestión del aparcamiento.
+Además, éste pretende resaltar cómo la creciente disponibilidad de datos a tiempo real, que junto con datos históricos y tecnologías en big data, machine learning y análisis de datos permiten abordar problemas cotidianos de manera innovadora.
+Para ello se utilizan datos del [Portal de Datos Abiertos del Ayuntamiento de Madrid](https://datos.madrid.es/portal/site/egob), en particular datos de tráfico, tanto mediciones a tiempo real como registros pasados, de parquímetros y de zonas de Servicio de Estacionamiento Regulado, las denominadas zonas SER.
+Con el fin de que la interpretación del trabajo sea más rápida y visual, se ha desarrollado una aplicación interactiva que, dada una ubicación, muestra en un mapa dinámico las zonas más favorables para encontrar aparcamiento en un radio establecido.
+Asimismo, para el desarrollo del trabajo se ha considerado el artículo Ionita, A.
+(2018) relacionado con el aparcamiento inteligente.
+Por otro lado, el proceso de segmentación de perfiles que se lleva a cabo en el proyecto se podría extrapolar a otros escenarios como la agrupación de usuarios en plataformas de venta digitales, aportando así valor a las empresas en la toma de decisiones basadas en datos.
+
+El trabajo sigue la siguiente estructura: en primer lugar, se analizan y se describen las fuentes de datos utilizadas, después, se comenta la metodología seguida para conseguir los objetivos deseados junto con las conclusiones extraídas, a continuación, se indica la implementación técnica de cada una de las partes del trabajo y por último, se presentan los resultados finales obtenidos junto con la aplicación de aparcamiento inteligente desarrollada.
+Todo el código utilizado para la elaboración del proyecto se encuentra en el [Anexo](#anexo).
+El conjunto de archivos relativos al trabajo se pueden encontrar en una [carpeta de Google Drive compartida](https://drive.google.com/drive/folders/1fPBtNw-YFMmtE6yJXnV2WCN5jIJQaNzg?usp=drive_link).
+
+# Descripción de las fuentes y análisis inicial {#descripcion-de-las-fuentes-y-analisis-inicial}
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+library(plotly)
+library(dplyr)
+library(readr)
+library(DT)
+library(RColorBrewer)
+library(ggcorrplot)
+library(gridExtra)
+library(tidyr)
+library(GGally)
+library(xml2)
+library(httr)
+library(lubridate)
+library(stringr)
+```
+
+Como se ha mencionado con anterioridad, para el trabajo se han utilizado datos del [Portal de Datos Abiertos del Ayuntamiento de Madrid](https://datos.madrid.es/portal/site/egob), además todos ellos se pueden encontrar en la [carpeta de Google Drive compartida](https://drive.google.com/drive/folders/1fPBtNw-YFMmtE6yJXnV2WCN5jIJQaNzg?usp=drive_link) asociada al trabajo.
+En esta sección se indican los conjuntos de datos usados, se añade el enlace para acceder a ellos y se muestran las 5 primeras filas de éstos, lo que permite apreciar su estructura.
+En primer lugar, [Servicio de Estacionamiento Regulado (SER). Calles y número de plazas](https://datos.madrid.es/portal/site/egob/menuitem.c05c1f754a33a9fbe4b2e4b284f1a5a0/?vgnextoid=4973b0dd4a872510VgnVCM1000000b205a0aRCRD&vgnextchannel=374512b9ace9f310VgnVCM100000171f5a0aRCRD&reloadCaptcha=true), éstos contienen información acerca de las zonas de aparcamiento de Madrid, incluyendo cualidades como calle, barrio, distrito o número de plazas.
+Los registros corresponden a 2025,
+
+```{r, echo = FALSE, message = FALSE}
+calles_ser <- read_csv2("calles_SER_2025.csv", n_max=10, locale = locale(encoding = "latin1"))
+
+datatable(head(calles_ser,5),
+          options = list(pageLength = 5,
+                         autoWidth = TRUE,
+                         scrollX = TRUE))
+
+```
+
+[Servicio de Estacionamiento Regulado (SER). Parquímetros](https://datos.madrid.es/portal/site/egob/menuitem.c05c1f754a33a9fbe4b2e4b284f1a5a0/?vgnextoid=65d85d6f40b86710VgnVCM2000001f4a900aRCRD&vgnextchannel=374512b9ace9f310VgnVCM100000171f5a0aRCRD&vgnextfmt=default), éstos recogen información acerca de los parquímetros de la ciudad de Madrid, los cuales se corresponden con algunas zonas SER incluidas en el dataset anterior,
+
+```{r, echo = FALSE, message = FALSE}
+parquimetros <- read_csv2("parquimetros.csv", n_max=10)
+
+datatable(head(parquimetros,5),
+          options = list(pageLength = 5,
+                         autoWidth = TRUE,
+                         scrollX = TRUE))
+```
+
+[Servicio de Estacionamiento Regulado (SER). Tiques de aparcamiento](https://datos.madrid.es/portal/site/egob/menuitem.c05c1f754a33a9fbe4b2e4b284f1a5a0/?vgnextoid=67663c0a55e16710VgnVCM1000001d4a900aRCRD&vgnextchannel=374512b9ace9f310VgnVCM100000171f5a0aRCRD&vgnextfmt=default), datos sobre tiques de aparcamiento registrados en el primer y segundo trimestre de 2025 para los parquímetros mencionados anteriormente,
+
+```{r, echo = FALSE, message = FALSE}
+tiques_2t <- read_csv2("Segundotrimestre2025.csv", n_max=10)
+
+datatable(head(tiques_2t,5),
+          options = list(pageLength = 5,
+                         autoWidth = TRUE,
+                         scrollX = TRUE))
+```
+
+[Tráfico. Histórico de datos del tráfico desde 2013](https://datos.madrid.es/portal/site/egob/menuitem.c05c1f754a33a9fbe4b2e4b284f1a5a0/?vgnextoid=33cb30c367e78410VgnVCM1000000b205a0aRCRD&vgnextchannel=374512b9ace9f310VgnVCM100000171f5a0aRCRD&vgnextfmt=default), datos de tráfico medidos cada 15 minutos en distintos puntos de Madrid de enero a junio de 2025,
+
+```{r, echo = FALSE, message = FALSE}
+trafico_junio <- read_csv2("06-2025.csv", n_max = 10)
+
+datatable(head(trafico_junio,5),
+          options = list(pageLength = 5,
+                         autoWidth = TRUE,
+                         scrollX = TRUE))
+```
+
+y finalmente, [Tráfico. Ubicación de los puntos de medida del tráfico](https://datos.madrid.es/portal/site/egob/menuitem.c05c1f754a33a9fbe4b2e4b284f1a5a0/?vgnextoid=ee941ce6ba6d3410VgnVCM1000000b205a0aRCRD&vgnextchannel=374512b9ace9f310VgnVCM100000171f5a0aRCRD), los cuales contienen información acerca de los puntos de medición de tráfico de Madrid hasta el 30/06/2025, como su ubicación o nombre.
+
+```{r, echo = FALSE, message = FALSE}
+puntos_medicion <- read_csv2("pmed_ubicacion_06-2025.csv", n_max=10, locale = locale(encoding = "latin1"))
+
+datatable(head(puntos_medicion,5),
+          options = list(pageLength = 5,
+                         autoWidth = TRUE,
+                         scrollX = TRUE))
+```
+
+Estos datasets son de gran magnitud, en conjunto forman un total de más de 90 millones de filas.
+Debido a ésto, se realiza un tratamiento preeliminar de los datos mediante tecnologías de Big Data para reducir su tamaño, para ello se utiliza PySpark en un clúster en la nube, se puede consultar más información sobre las tecnologías utilizadas en la sección [Implementación](#implementacion).
+Además, el código de Python para replicar dicho proceso se encuentra en la subsección [Tratamiento Preeliminar con Spark](#tratamiento-preeliminar-con-spark) del [Anexo](#anexo).
+Fundamentalmente, en el código se lleva a cabo una agrupación de los registros de tráfico y tiques en cuatro grupos temporales: mañana, mediodía, tarde y noche, para dos tipos de días: días entre semana y días en fin de semana.
+Así se puede realizar un estudio de los patrones de comportamiento en estos grupos del tráfico y del aparcamiento, además, dicha agrupación permite tener una visión más general de los datos.
+Tras este tratamiento inicial se obtienen los dataframes: `calles_ser`, `aparcamiento_info` y `tráfico_df`, los cuales se analizan en esta sección de manera visual, incluyendo los puntos más destacables del estudio realizado en el apartado [Análisis Exploratorio de los Datos](#analisis-exploratorio-de-los-datos) de la subsección [Código Principal](#codigo-principal) del [Anexo](#anexo).
+
+-   `calles_ser`: Este dataframe recoge información acerca de las calles de Madrid con zonas de Servicio de Estacionamiento Regulado. Tiene las siguientes variables
+    -   `gis_x`: Coordenada X, proyección UTM, de sistema geodésico de referencia ETRS89.
+    -   `gis_y`: Coordenadas Y, proyección UTM, del sistema geodésico de referencia ETRS89.
+    -   `distrito` : Nombre del distrito.
+    -   `barrio`: Nombre del barrio.
+    -   `calle`: Nombre de la calle.
+    -   `numero_finca`: Número de finca.
+    -   `color`: Color de la zona de aparcamiento, siendo el tipo de plaza de estacionamiento: Verde (Uso residencial); Azul (Uso rotacional); Naranja (Ámbito Diferenciado Disuasorio); Alta Rotación (Alta Rotación); Rojo (Ámbito Diferenciado Hospitalario).
+    -   `cod_distrito`: Código de distrito.
+    -   `cod_barrio`: Código de barrio.
+    -   `num_barrio`: Número de barrio.
+    -   `bateria_linea`: Tipo de aparcamiento.
+    -   `numero_plazas`: Cantidad numérica de vehículos que pueden ocupar el espacio destinado al aparcamiento.
+    -   `longitud`: Longitud en grados en WGS 84.
+    -   `latitud`: Latitud en grados en WGS 84.
+
+Se muestran las 10 primeras filas de los datos:
+
+```{r, echo = FALSE}
+calles_ser <- read_csv("calles_ser_df.csv", show_col_types = FALSE)
+datatable(head(calles_ser,10),
+          options = list(pageLength = 5,
+                         autoWidth = TRUE,
+                         scrollX = TRUE))
+```
+
+En total el dataframe tiene 33730 filas y 14 columnas, es decir, 33730 zonas de aparcamiento cada una con su correspondiente número de plazas.
+En el anexo se lleva a cabo un análisis de los datos en el que se comprueba que el conjunto de datos no tenga valores nulos ni duplicados y se tratan los tipos de las variables.
+En conjunto contiene información acerca de 177622 plazas de aparcamiento, situadas en 63 barrios ubicados en 13 distritos.
+En el siguiente diagrama de árbol se puede observar el número de plazas por barrio y por distrito.
+
+```{r, echo=FALSE}
+df_nplazas_barrio_distrito <- calles_ser %>%
+  group_by(distrito, barrio) %>%
+  summarise(numero_plazas = sum(numero_plazas), .groups = "drop")
+
+# Identificadores únicos como distrito_barrio
+df_nplazas_barrio_distrito <- df_nplazas_barrio_distrito %>%
+  mutate(id = paste0(distrito, "_", barrio),
+         parents = distrito)
+
+# Transformaciones necesarias para crear los distritos como  nodos padre
+df_padres <- df_nplazas_barrio_distrito %>%
+  group_by(distrito) %>%
+  summarise(numero_plazas = sum(numero_plazas), .groups = "drop") %>%
+  mutate(id = distrito,
+         barrio = distrito,
+         parents = "") %>%
+  select(names(df_nplazas_barrio_distrito))
+
+df_nplazas_treemap <- bind_rows(df_padres, df_nplazas_barrio_distrito)
+
+# Treemap por distrito, barrio y número de plazas
+plot_ly(
+  df_nplazas_treemap,
+  type = "treemap",
+  labels = ~barrio,
+  parents = ~parents,
+  values = ~numero_plazas,
+  ids = ~id,
+  textinfo = "label+value",
+  branchvalues = "total"
+)
+```
+
+El distrito con el mayor número de plazas es Chamartín, con Nueva España como el barrio más destacable con 6385 plazas de aparcamiento.
+Mientras que para todo el distrito de Carabanchel solo se registran 462 plazas en total.
+En el boxplot que se incluye abajo se puede observar que las zonas de aparcamiento tienen mayoritariamente entre 1 y 15 plazas, aunque pudiendo llegar hasta a 183.
+Se incluye también el histograma de la variable `numero_plazas` para observar su distribución.
+
+```{r, echo = FALSE}
+subplot(
+  # Boxplot
+  plot_ly(calles_ser, x = ~numero_plazas, type = "box", name = "Boxplot", boxpoints = "outliers"),
+  # Histograma
+  plot_ly(calles_ser, x = ~numero_plazas, type = "histogram", nbinsx = 30, name = "Histograma"),
+  nrows = 2,
+  shareX = TRUE,
+  heights = c(0.25, 0.75),
+  titleX = TRUE,
+  titleY = TRUE
+) %>% layout(
+  title = paste0('Distribución de numero_plazas'),
+  showlegend = FALSE,
+  yaxis2 = list(title = "Frecuencia")
+)
+```
+
+La calle con mayor número de plazas de entre todas las que se encuentran en los datos es el paseo de la Castellana con 1201 plazas.
+A continuación, se presenta un mapa con la localización de las distintas zonas SER incluidas en los datos, lo que permite ubicarlas geográficamente.
+Se incluye el color del tipo de aparcamiento de cada una, además de la calle, el número de finca, el barrio, el distrito y el número de plazas.
+Esta información se puede ver al situarse encima de cada una de ellas.
+
+```{r, echo=FALSE}
+calles_ser <- calles_ser %>%
+  mutate(color = factor(color, levels = c("Azul","Verde","Alta Rotación","Rojo","Naranja")))
+
+colores_aparcamiento <- c("Azul"="blue","Verde"="green","Rojo"="red","Naranja"="orange","Alta Rotación"="purple")
+
+# Mapa zonas SER
+plot_ly(
+  calles_ser,
+  lat = ~latitud,
+  lon = ~longitud,
+  type = 'scattermapbox',
+  mode = 'markers',
+  color = ~color,             
+  colors = colores_aparcamiento,         
+  marker = list(size = 4, symbol = 'circle'),
+  text = ~paste0(
+    "<b>Calle:</b> ", calle, "<br>",
+    "<b>Número finca:</b> ", numero_finca, "<br>",
+    "<b>Barrio:</b> ", barrio, "<br>",
+    "<b>Distrito:</b> ", distrito, "<br>",
+    "<b>Número de plazas:</b> ", numero_plazas
+  ),
+  hovertemplate = "%{text}<extra></extra>"
+) %>%
+  layout(
+    mapbox = list(
+      style = "carto-positron",
+      center = list(lat = mean(calles_ser$latitud), lon = mean(calles_ser$longitud)),
+      zoom = 11
+    ),
+    title = "Mapa de zonas SER",
+    legend = list(
+      title = list(text = "Tipo de zona de aparcamiento")
+    )
+  )
+```
+
+La gran mayoría de las zonas SER son zonas verdes (87.3%), seguidas de zonas azules (12.3%), mientras que las zonas rojas, naranjas y de alta rotación no llegan en conjunto ni a un 0.5% de los datos.
+Ésto se puede observar en el siguiente diagrama de sectores:
+
+```{r, echo = FALSE}
+frecuencias_colores <- calles_ser %>%
+  count(color, name = "frecuencia") %>%
+  mutate(color = factor(color, levels = names(colores_aparcamiento)))
+
+# Gráfico de sectores variable color
+plot_ly(frecuencias_colores, labels = ~color, values = ~frecuencia,
+               type = 'pie', textinfo = 'percent+label',
+               marker = list(colors = colores_aparcamiento[frecuencias_colores$color]))
+```
+
+Finalmente, se muestra la distribución de la cantidad de aparcamientos en línea y en batería.
+
+```{r, echo=FALSE}
+# Tabla de frecuencias de la variable bateria_linea
+frecuencias_baterialinea <- calles_ser %>%
+  count(bateria_linea, name = "frecuencia")
+
+# Ajustamos colores para los dos niveles
+colores_aux <- colorRampPalette(brewer.pal(8, "Set3"))(nrow(frecuencias_baterialinea))
+
+# Gráfico de sectores variable bateria_linea
+plot_ly(
+  frecuencias_baterialinea,
+  labels = ~bateria_linea,
+  values = ~frecuencia,
+  type = 'pie',
+  textinfo = 'percent+label',
+  marker = list(colors = colores_aux)
+)
+```
+
+Casi el 77%% de los aparcamientos recogidos en los datos son en línea mientras que el resto son en batería.
+
+-   `trafico_df`: Este dataframe contiene información del tráfico medido en Madrid desde enero a junio de 2025 para distintos intervalos de tiempo y tipo de día. Sus variables son:
+    -   `int_tiempo`: Indicador de un intervalo de tiempo: Mañana (de 6:00 a 12:00), Mediodia (de 12:00 a 18:00), Tarde (de 18:00 a 0:00) o Noche (de 0:00 a 6:00).
+    -   `fin_de_semana`: Indicador de un día entre semana (0) o fin de semana (1).
+    -   `media_intensidad`: Media del número de vehículos registrados, expresada en vehículos/hora. Un valor negativo implica la ausencia de datos. Por ejemplo, si su valor es 70 para un día entre semana por la mañana, esto indica que de media pasan 70 vehículos por hora por ese punto de medición los días entre semana por la mañana.
+    -   `media_ocupacion`: Porcentaje medio de tiempo que está un detector de tráfico ocupado por un vehículo. Un valor negativo implica la ausencia de datos.
+    -   `media_carga`: Media del parámetro de carga del vial en el periodo de tiempo y tipo de día correspondiente. Representa una estimación del grado de congestión, calculado a partir de un algoritmo que usa como variables la intensidad y ocupación, con ciertos factores de corrección. Establece el grado de uso de la vía en un rango de 0 (vacía) a 100 (colapso). Un valor negativo implica la ausencia de datos.
+    -   `longitud`: Longitud en grados en WGS 84 de la ubicación de los puntos de medición de tráfico.
+    -   `latitud`: Latitud en grados en WGS 84 de la ubicación de los puntos de medición de tráfico.
+
+Se muestran las 10 primeras filas de los datos junto con un resumen de las variables numéricas y categóricas que permite conocer su distribución.
+
+```{r, echo = FALSE}
+trafico_df <- read_csv("trafico_df.csv", show_col_types = FALSE)
+
+trafico_df$int_tiempo <- factor(
+  trafico_df$int_tiempo,
+  levels = c("Mañana", "Mediodia", "Tarde", "Noche")
+)
+
+datatable(head(trafico_df,10),
+          options = list(pageLength = 5,
+                         autoWidth = TRUE,
+                         scrollX = TRUE))
+```
+
+```{r,echo=FALSE}
+trafico_df$fin_de_semana <- as.factor(trafico_df$fin_de_semana)
+summary(trafico_df[,c('media_intensidad','media_carga','media_ocupacion','int_tiempo','fin_de_semana')])
+```
+
+El dataframe tiene un total de 38153 filas y 8 columnas.
+Estos datos se obtienen a partir de alrededor de 5000 puntos de medición distintos, la ubicación de los cuales se muestra en el siguiente mapa.
+
+```{r, echo = FALSE}
+# Mapa con la ubicación de los puntos de medición de tráfico en Madrid
+plot_ly(
+  data = trafico_df,
+  lat = ~latitud,
+  lon = ~longitud,
+  type = 'scattermapbox',
+  mode = 'markers',
+  marker = list(
+    size = 3,
+    color = 'black',
+    symbol = 'circle'
+  ),
+  name = ''
+) %>%
+layout(
+  mapbox = list(
+    style = "carto-positron",
+    center = list(lat = mean(trafico_df$latitud), lon = mean(trafico_df$longitud)),
+    zoom = 11
+  ),
+  title = "Mapa de puntos de medida de tráfico de Madrid",
+  showlegend = FALSE
+)
+```
+
+Se puede observar que dichos puntos de medición recubren todo el espacio en el que se encuentran las zonas SER.
+Se estudia ahora la distribución de las tres medidas numéricas `media_intensidad`, `media_ocupacion` y `media_carga`, las cuales definen el tráfico en los datos.
+
+```{r, echo=FALSE}
+variables <- c("media_intensidad", "media_ocupacion", "media_carga")
+
+ggpairs(trafico_df[, variables]) + theme_minimal()
+```
+
+Por un lado, en este gráfico se pueden observar las distribuciones individuales de cada una de las variables, se ve que son distribuciones con asimetría positiva, es decir, se concentran en valores más reducidos pero presentan una gran cola.
+Ésto ocurre sobretodo para las variables `media_intendidad` y `media_ocupacion`, la distribución de la carga media es ligeramente más relajada.
+Por otro lado, las distribuciones bivariantes indican que la carga crece a medida que crece tanto la intensidad como la ocupación, lo que cabe esperar por el grado de correlación positiva que hay entre dichas combinaciones de variables, mientras que la intensidad y la ocupación no muestran mucha relación entre ellas.
+A continuación, se muestran también las distribuciones de las variables `media_intensidad`, `media_ocupacion` y `media_carga` mediante boxplots interactivos, estos permiten conocer mejor las distribuciones univariantes de estas ya que el gráfico no se ve tan distorsionado por la presencia de outliers.
+
+```{r, echo=FALSE}
+p_intensidad <- plot_ly(trafico_df, y = ~media_intensidad, type = "box", name = "media_intensidad")
+p_ocupacion <- plot_ly(trafico_df, y = ~media_ocupacion, type = "box", name = "media_ocupacion")
+p_carga <- plot_ly(trafico_df, y = ~media_carga, type = "box", name = "media_carga")
+
+subplot(p_intensidad, p_ocupacion, p_carga, nrows = 1, shareY = FALSE, titleX = TRUE)
+```
+
+A la izquierda se observa que la intensidad media oscila mayoritariamente entre 0 y 877 coches por hora de media, aunque pudiendo sobrepasar los 6000.
+La ocupación media indica que normalmente un detector de tráfico está cubierto por un vehículo entre el 0% y el 13% del tiempo y la carga media muestra que la congestión de las carreteras suele ir de 0 a 50, lo cual parece razonable teniendo en cuenta que 100 sería colapso.
+Con el fin de conocer la dinámica temporal del tráfico se muestra ahora la distribución `media_carga` para cada nivel de `int_tiempo` y `fin_de_semana`.
+
+```{r,echo=FALSE, warning=FALSE}
+# Distribución de la variable media_carga por int_tiempo y por fin_de_semana
+plot_ly(
+  data = trafico_df,
+  x = ~int_tiempo,
+  y = ~media_carga,
+  type = "box",
+  color = ~factor(fin_de_semana, labels = c("Día entre semana", "Día fin de semana")),
+  colors = c("steelblue", "tomato")
+) %>%
+layout(
+  title = "Distribución de media_carga por intervalo de tiempo y tipo de día",
+  xaxis = list(title = "Tramo horario"),
+  yaxis = list(title = "media_carga"),
+  boxmode = "group"
+)
+```
+
+Se observa que para los días entre semana la carga es mayor al mediodía, seguida de la mañana y la tarde que se encuentran prácticamente al mismo nivel y presentando por la noche la distribución de carga más baja de todo el diagrama.
+El único grupo temporal en el que es mayor la carga media los fines de semana a los días entre semana es por la noche, lo que se podría deber a la mayor vida nocturna en sábado y domingo.
+En general hay mucha menos carga media por la noche que en cualquier otro grupo temporal.
+La distribución de la ocupación e intensidad media para cada intervalo de tiempo y tipo de día se puede consultar en el apartado [Análisis Exploratorio de los Datos](#analisis-exploratorio-de-los-datos) de la subsección [Código Principal](#codigo-principal) del [Anexo](#anexo).
+
+-   `aparcamiento_info`: Este dataframe contiene datos de numero de tiques registrados en determinadas zonas SER dotadas con parquímetros para cada intervalo de tiempo y tipo de día. Para su construcción se han considerado datos de enero a junio de 2025. Sus variables son:
+    -   `int_tiempo`: Indicador de un intervalo de tiempo: Mañana (de 6:00 a 12:00), Mediodia (de 12:00 a 18:00), Tarde (de 18:00 a 0:00) o Noche (de 0:00 a 6:00).
+    -   `fin_de_semana`: Indicador de un día entre semana (0) o fin de semana (1).
+    -   `numero_tiques`: Número de tiques sacados.
+    -   `calle`: Nombre de la calle.
+    -   `numero_finca`: Número de finca.
+    -   `longitud`: Longitud en grados en WGS 84.
+    -   `latitud`: Latitud en grados en WGS 84.
+    -   `numero_plazas`: Cantidad numérica de vehículos que pueden ocupar el espacio destinado al aparcamiento.
+    -   `color`: Color, siendo el tipo de plaza de estacionamiento: Verde (Uso residencial); Azul (Uso rotacional); Naranja (Ámbito Diferenciado Disuasorio); Alta Rotación (Alta Rotación); Rojo (Ámbito Diferenciado Hospitalario).
+    -   `bateria_linea`: Tipo de aparcamiento.
+    -   `gis_x`: Coordenadas X, proyección UTM, del sistema geodésico de referencia ETRS89.
+    -   `gis_y`: Coordenadas Y, proyección UTM, del sistema geodésico de referencia ETRS89.
+    -   `cod_distrito`: Código de distrito.
+    -   `barrio`: Nombre del barrio.
+    -   `cod_barrio`: Código de barrio.
+    -   `distrito`: Nombre del distrito.
+
+Se muestran las 10 primeras filas del dataframe y un resumen de las variables numéricas y factores:
+
+```{r,echo=FALSE}
+aparcamientos_info <- read_csv("parking_info_df.csv" , show_col_types = FALSE)
+
+datatable(head(aparcamientos_info,10),
+          options = list(pageLength = 5,
+                         autoWidth = TRUE,
+                         scrollX = TRUE))
+```
+
+```{r, echo=FALSE}
+aparcamientos_info <- aparcamientos_info %>%
+  mutate(across(c(fin_de_semana, bateria_linea, color, int_tiempo), as.factor))
+
+
+summary(aparcamientos_info[,c('numero_tiques','numero_plazas','int_tiempo','color', 'bateria_linea' ,'fin_de_semana')])
+```
+
+El dataframe tiene un total de 21085 filas y 16 columnas.
+Se muestra en el siguiente mapa en gris las zonas SER que no tienen parquímetro por lo que no se tiene información relativa a tiques y en azul las zonas SER que sí están informadas al estar asociadas a un parquímetro.
+
+```{r,echo=FALSE}
+aparcamientos_no_info <- calles_ser %>%
+  anti_join(
+    aparcamientos_info %>% select(gis_x, gis_y),
+    by = c("gis_x", "gis_y")
+  )
+
+calles_ser <- calles_ser %>%
+  mutate(zona_informada = ifelse(paste(gis_x, gis_y) %in% 
+                                paste(aparcamientos_no_info$gis_x, aparcamientos_no_info$gis_y),
+                              "No", "Sí"))
+
+plot_ly(
+  data = calles_ser,
+  type = 'scattermapbox',
+  mode = 'markers',
+  lat = ~latitud,
+  lon = ~longitud,
+  color = ~zona_informada,
+  colors = c("grey", "blue"),     
+  marker = list(size = 4),
+  text = ~paste("Calle:", calle, "<br>Número:", numero_finca)  
+) %>%
+  layout(
+    mapbox = list(
+      style = "carto-positron",
+      zoom = 11,    
+      center = list(lat = mean(calles_ser$latitud), lon = mean(calles_ser$longitud))
+    ),
+    legend = list(title = list(text = "Zona SER informada"))
+  )
+
+```
+
+Uno de los procesos que se realizan en el trabajo, explicado en más detalle en la sección de [Metodología](#metodologia), es el entrenamiento de un modelo de regresión, a partir de los datos de las zonas con parquímetro, para predecir el numero de tiques en las zonas de estacionamiento que no tienen, es decir, las zonas grises en el mapa.
+Se muestra la distribución de la variable `numero_tiques`.
+
+```{r,echo=FALSE}
+# Distribución numero_tiques
+subplot(
+    # Boxplot 
+    plot_ly(aparcamientos_info, x = ~numero_tiques, type = "box", name = "Boxplot", boxpoints = "outliers"),
+    # Histograma 
+    plot_ly(aparcamientos_info, x = ~numero_tiques, type = "histogram", nbinsx = 30, name = "Histograma"),
+    nrows = 2,
+    shareX = TRUE,
+    heights = c(0.25, 0.75),
+    titleY = TRUE
+  ) %>% 
+    layout(
+      title = "Distribución de numero_tiques",
+      showlegend = FALSE,
+      yaxis2 = list(title = "Frecuencia")
+  )
+```
+
+El número medio de tiques sacados en las zonas SER con parquímetro es en su gran mayoría entre 1 y 900.
+Se observa datos de parquímetros con más de 5000 tiques registrados para cierto intervalo de tiempo y tipo de día.
+Vemos este caso en particular:
+
+```{r, echo=FALSE}
+datatable(aparcamientos_info[which.max(aparcamientos_info$numero_tiques), ], options = list(scrollX=TRUE,
+                                                                                  autoWidth = TRUE))
+```
+
+Se aprecia que el número de tiques para un día entre semana al medio día en el parquímetro de la calle de Marcelo Usera número 76 del barrio Moscardo es de media 5385.
+Al igual que se ha hecho con las medidas de tráfico se muestra la distribución de `numero_tiques` para los valores de `int_tiempo` y `fin_de_semana`.
+
+```{r, echo=FALSE, warning=FALSE}
+aparcamientos_info$int_tiempo <- factor(aparcamientos_info$int_tiempo, levels = c("Mañana","Mediodia","Tarde","Noche"))
+
+plot_ly(
+  data = aparcamientos_info,
+  x = ~int_tiempo,
+  y = ~numero_tiques,
+  type = "box",
+  color = ~factor(fin_de_semana, labels = c("Día entre semana", "Día fin de semana")),
+  colors = c("steelblue", "tomato")
+) %>%
+layout(
+  title = "Distribución de numero_tiques por intervalo de tiempo y tipo de día",
+  xaxis = list(title = "Tramo horario"),
+  yaxis = list(title = "numero_tiques"),
+  boxmode = "group"
+)
+```
+
+Se observa que el número de tiques sacado durante la mañana, mediodía y la tarde los días entre semana es mucho mayor que los sacados los fines de semana o los días entre semana por la noche.
+Siendo el mediodía de lunes a viernes el tramo de tiempo que más destaca.
+Se comprueba ahora si las variables `numero_plazas` y `numero_tiques` están relacionadas de alguna manera:
+
+```{r, echo = FALSE}
+variables <- c("numero_plazas", "numero_tiques")
+
+ggpairs(aparcamientos_info[, variables]) + theme_minimal()
+```
+
+El índice de correlación indica que son variables muy poco correladas y que no muestran ninguna relación entre ellas.
+Aunque el gráfico de dispersión indica que las zonas con mayor número de tiques registrados se corresponden con las que menor número de plazas tienen.
+Finalmente, se comprueba la distribución de los tipos de estacionamiento por color para las zonas SER que tienen parquímetro:
+
+```{r, echo=FALSE}
+# Tabla de frecuencias de la variable bateria_linea
+frecuencias_colores <- aparcamientos_info %>%
+  count(color, name = "frecuencia") %>%
+  mutate(color = factor(color, levels = names(colores_aparcamiento)))
+
+# Gráfico de sectores variable color
+plot_ly(frecuencias_colores, labels = ~color, values = ~frecuencia,
+               type = 'pie', textinfo = 'percent+label',
+               marker = list(colors = colores_aparcamiento[frecuencias_colores$color]))
+```
+
+El gráfico muestra que en el dataframe hay presencia de cada uno de los tipos de estacionamiento según su color.
+
+Por otro lado, para la aplicación se utilizan los datos de tráfico a tiempo real, [Tráfico. Datos del tráfico en tiempo real](https://datos.madrid.es/portal/site/egob/menuitem.c05c1f754a33a9fbe4b2e4b284f1a5a0/?vgnextoid=02f2c23866b93410VgnVCM1000000b205a0aRCRD&vgnextchannel=374512b9ace9f310VgnVCM100000171f5a0aRCRD).
+Algunas de las variables de éstos son:
+
+-   `intensidad`: Intensidad de número de vehículos por hora. Un valor negativo implica la ausencia de datos.
+-   `ocupacion`: Porcentaje de tiempo que está un detector de tráfico ocupado por un vehículo. Por ejemplo, una ocupación del 50% en un periodo de 15 minutos significa que ha habido vehículos situados sobre el detector durante 7 minutos y 30 segundos. Un valor negativo implica la ausencia de datos.
+-   `carga`: Parámetro de carga del vial. Representa una estimación del grado de congestión, calculado a partir de un algoritmo que usa como variables la intensidad y ocupación, con ciertos factores de corrección. Establece el grado de uso de la vía en un rango de 0 (vacía) a 100 (colapso). Un valor negativo implica la ausencia de datos.
+-   `nivelServicio`: Parámetro calculado en función de la velocidad y la ocupación. Con ellos se forma una matriz de 4x4 con la que se determina cada uno de los niveles de servicio posibles: tráfico fluido (0), tráfico lento (1), retenciones (2) y congestión (3). Los umbrales de velocidad y los de ocupación que determinan dichos niveles de servicio varían en función del punto de medida.
+-   `st_x`: Coordenada X UTM del centroide que representa al punto de medida en el fichero georreferenciado.
+-   `st_y`:Coordenada X UTM del centroide que representa al punto de medida en el fichero georreferenciado.
+
+Se muestra un ejemplo de estos datos, para la fecha y hora:
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+url <- "https://informo.madrid.es/informo/tmadrid/pm.xml"
+response <- httr::GET(url, timeout(10))
+httr::stop_for_status(response)
+
+xml <- read_xml(content(response, "text", encoding = "UTF-8"))
+
+# Fecha y hora
+fecha_hora <- xml_text(xml_find_first(xml, "//fecha_hora"))
+dt <- dmy_hms(fecha_hora)
+
+nodos_pm <- xml_find_all(xml, "//pm")
+
+descripcion <- xml_text(xml_find_all(nodos_pm, "descripcion"))
+carga <- as.numeric(xml_text(xml_find_all(nodos_pm, "carga")))
+intensidad <- as.numeric(xml_text(xml_find_all(nodos_pm, "intensidad")))
+ocupacion <- as.numeric(xml_text(xml_find_all(nodos_pm, "ocupacion")))
+nivelServicio <- as.numeric(xml_text(xml_find_all(nodos_pm, "nivelServicio")))
+st_x <- str_replace(xml_text(xml_find_all(nodos_pm, "st_x")), ",", ".") %>% as.numeric()
+st_y <- str_replace(xml_text(xml_find_all(nodos_pm, "st_y")), ",", ".") %>% as.numeric()
+
+  traffic_df <- data.frame(descripcion, carga, intensidad, ocupacion, nivelServicio, st_x, st_y) %>%
+    filter(!is.na(descripcion) & !is.na(st_x) & !is.na(st_y))
+  
+print(fecha_hora)
+```
+
+```{r, echo = FALSE}
+datatable(head(traffic_df,10),
+          options = list(pageLength = 5,
+                         autoWidth = TRUE,
+                         scrollX = TRUE))
+```
+
+# Metodología {#metodologia}
+
+En esta sección se describen los procedimientos seguidos a lo largo del trabajo para el modelado de los datos presentados en la sección anterior.
+Se comienza por explicar el tratamiento espaciotemporal que se lleva a cabo de éstos.
+Después, se comenta la ingeniería de características realizada previa al entrenamiento de distintos algoritmos de aprendizaje.
+Seguidamente, se procede a explicar el desarrollo de varios modelos de regresión para el modelado y posterior predicción de la variable `numero_tiques`.
+Finalmente, se expone cómo, a partir de la información de tráfico, de tiques y de aparcamiento, tiene lugar la segmentación de las zonas SER para cada intervalo de tiempo y tipo de día en función de la facilidad de encontrar aparcamiento en ellas.
+También, se indica la manera en la que se combina el resultado obtenido con los datos de tráfico a tiempo real para hacer uso de ellos en la aplicación de recomendación de zonas de estacionamiento.
+
+Como se ha explicado brevemente en la sección anterior, los datos de tráfico y de tiques en un comienzo tienen granularidad día y hora, por lo que se agrupan con el fin de reducir su número de filas.
+Dicha agrupación se hace a partir de dos variables categóricas: `int_tiempo`, con los niveles Mañana (de 6:00 a 12:00), Mediodia (de 12:00 a 18:00), Tarde (de 18:00 a 0:00) y Noche (de 0:00 a 6:00) y `fin_de_semana`, con los niveles 0 (referente al conjunto de días entre semana) y 1 (referente al sábado y domingo), considerando la media de las variables numéricas en cada uno de estos grupos.
+Ésto permite estudiar el tráfico y la dinámica de los tiques de aparcamiento en cada intervalo temporal y obtener una visión general de los datos.
+El código para replicar el proceso se encuentra en subsección [Tratamiento Preeliminar con Spark](#tratamiento-preeliminar-con-spark) del [Anexo](#anexo) y las tecnologías utilizadas para ello se indican en [Implementación](#implementacion).
+
+Por otro lado, dado que se busca relacionar cada zona de aparcamiento con datos de tráfico, se asigna a cada estacionamiento un valor de tráfico por cercanía.
+Este procedimiento se lleva a cabo haciendo uso de dataframes espaciales, los cuales permiten asociar datos por los registros más cercanos a partir de sus coordenadas.
+De esta manera se obtienen dos dataframes de aparcamiento con su tráfico correspondiente, uno de ellos con información de tiques de parquímetros, `df_aparcamiento_info` y el otro sin información, `df_aparcamiento_no_info`, ambos con una columna de geometría la cual recoge sus coordenadas geográficas.
+El código utilizado para esto se encuentra en el apartado [Tratamiento Espacial de los Datos](#tratamiento-espacial-de-los-datos) de la subsección [Código Principal](#codigo-principal) del [Anexo](#anexo) y la librería utilizada se puede consultar en [Implementación](#implementacion).
+
+Asimismo, se efectúa ingeniería de características con vista a la prepación de los datos para el entrenamiento de distintos modelos de aprendizaje.
+Primero, se codifican las variables categóricas, o factores, asignándole a cada uno de los niveles de éstas un valor numérico.
+Después, se crean nuevas variables que aportan nueva información como:
+
+-   `ratio_intensidad_por_nplazas`, variable numérica que se calcula como `media_intensidad`/`numero_plazas`. Ésta aporta gran valor puesto que informa de la saturación de la zona SER, a mayor intensidad y menor número de plazas esa zona será menos favorable para encontrar aparcamiento, mientras que una con la misma intensidad y mayor número de plazas será más adecuada. Por lo tanto, cuanto mayor sea dicha ratio menor será la facilidad de encontrar aparcamiento en la correspondiente zona de estacionamiento.
+-   `congestion`, variable categórica cuyos niveles se asignan en base al valor de `media_carga`. Sus categorías son Baja, si `media_carga` es menor que 25, Media, si está entre 25 y 50, Alta, si se encuentra entre 50 y 75 y Muy Alta, si supera 75. Ésta aporta información sobre el grado de carga de la carretera de manera cualitativa.
+-   `tiempo_cos`, `tiempo_sin`: Variables temporales cíclicas las cuales se calculan haciendo el seno y coseno del valor de `int_tiempo` codificado multiplicado por $2\pi$ y dividido entre 4. Ésto permite mostrar la relación real de los niveles de la variable `int_tiempo` a modo de ciclo. Así el modelo entiende que, por ejemplo, noche y mañana están cerca, y no considera una relación lineal entre los 4 niveles de la variable.
+-   `x`,`y`,`z`: Coordenadas cartesianas a partir de los valores de longitud y latitud. Éstas se calculan en primer lugar transformando las coordenadas geográficas de grados a radianes y después considerando las siguientes fórmulas. $x = \cos(\text{latitud_radianes}) \cos(\text{longitud_radianes})$, $y = \cos(\text{latitud_radianes}) \sin(\text{longitud_radianes})$ y $z = \sin(\text{latitud_radianes}).$ Mediante éstas el modelo entiende mejor las proximidades espaciales reales, reduciendo la distorsión de las distancias entre puntos. 
+
+Para finalizar, se le aplica escala logarítmica a ciertas variables, de esta manera se transforman distribuciones con asimetría positiva pronunciada en distribuciones más normalizadas, reduciendo así la presencia de valores atípicos. Se muestra a continuación varias de estas transformaciones:
+
+![Distribución de la variable ratio_intensidad_por_nplazas del dataframe df_aparcamiento_info](dist_ratio_intensidad_log.png) ![Distribución de la variable numero_tiques del dataframe df_aparcamiento_info](dist_ntiques_log.png)
+
+Más detalles de este procedimiento se pueden consultar en el aparatado de [Feature Engineering](#feature-engineering) de la subsección [Código Principal](#codigo-principal) del [Anexo](#anexo).
+
+Seguidamente, se entrenan distintos algoritmos de regresión para modelar la variable `numero_tiques`, la cual se considera en escala logarítmica para obtener un mejor resultado.
+En primer lugar, se utiliza regresión lineal, que aún siendo un modelo simple, permite ver la relación entre las variables predictoras y la variable objetivo.
+Para éste modelo se obtiene un coeficiente de determinación $R^2$ de alrededor de 0.7 y valores de error cuadrático medio y error absoluto medio adecaudos, aunque se observan ciertos patrones en el análisis de los residuos que indican que hay cierta información no recogida por el modelo lineal que necesita de modelos más complejos para su explicación.
+Debido a ésto se entrenan los algoritmos XGBoost y Random Forest, el primero, basado en técnicas de *boosting* y el segundo un algoritmo de ensamblado.
+Ambos presentan buenos resultados en las métricas de entrenamiento las cuales se pueden observar en la tabla:
+
+```{r, echo=FALSE, Warning =FALSE}
+# Leer archivo CSV
+tabla_comparacion <- read.csv("tabla_comparacion.csv", stringsAsFactors = FALSE)
+
+datatable(
+  tabla_comparacion,
+  options = list(
+    pageLength = 5,
+    scrollX = TRUE
+  ),
+  rownames = FALSE
+)
+```
+
+Sin embargo, Random Forest muestra un ligero sobreentrenamiento el cual no se ha podido controlar mediante técnicas de ajuste de parámetros ni validación cruzada.
+Éste nos indica que el modelo aprende bien los datos de entrenamiento pero no generaliza adecuadamente a la hora de predecir los de test.
+Debido a ésto y al estudio que se realiza de los residuos para ambos modelos en el apartado de [Algoritmos de Regresión](#algoritmos-de-regresion) de la subsección [Código Principal](#codigo-principal) del [Anexo](#anexo), se elige XGBoost como modelo más adecuadao para predecir los valores de la variable `numero_tiques` en el dataframe `df_aparcamiento_no_info`.
+Cabe añadir, de acuerdo con todos los algoritmos considerados, que las variables que presentan mayor relevancia en el entrenamiento de los modelos son las de tipo temporal, como `fin_de_semana`, `tiempo_sin` y `tiempo_cos`, seguidas de las variables espaciales y en ciertos casos algunas referentes al tráfico. Ésto indica que el número de tiques resgistrados en cada parquímetro depende en gran medida del factor temporal. Una conclusión más detallada de la aplicación de cada uno de los modelos de regresión se puede consultar en [Algoritmos de Regresión](#algoritmos-de-regresion) del [Anexo](#anexo).
+
+Finalmente, se combinan `df_aparcamiento_info` y `df_aparcamiento_no_info`, ya con la variable `numero_tiques`, en un dataframe llamado `df_aparcamiento` para proceder a la agrupación de las zonas SER.
+En particular, se lleva a cabo dicha segmentación mediante el algoritmo de *clustering* *k-means*, el cual permite agrupar los registros de manera sencilla en un número de grupos preestablecido, al que se denota k. Para ello, se consideran las variables `log_ratio_intensidad_por_nplazas`, `log_media_ocupacion`, `numero_tiques` y `log_numero_plazas`, a las cuales se le aplica un método de escalado robusto resistente a *outliers*.
+El modelo se entrena independientemente para cada una de las distintas combinaciones de los valores `int_tiempo` y `fin_de_semana`.
+En cada caso, para la elección del número óptimo de *clusters* se lleva a cabo un estudio de distintas métricas como la inercia, la cual mide la compacidad interna de cada *cluster*, el índice de Jaccard, el cual mide la estabilidad de los *clusters* y el valor de Silhouette, que mide la separación y compacidad de todos los *clusters*. Para k=3 se obtiene un valor de Silhouette medio de 0.3 para los distintos subconjuntos, una estabilidad media de 0.8 y una inercia menor que para el caso de dos *clusters*, lo que indica mayor compacidad. Aunque es un resultado mejorable, se considera aceptable al tratarse de datos reales.
+Por otro lado, a partir de los *clusters* identificados se construye una nueva variable categórica llamada `facilidad_aparcamiento`, para ello se calcula `facilidad_puntuacion` aplicando la fórmula `log_numero_plazas` - `log_ratio_intensidad_por_nplazas` - `log_media_ocupacion` - 0.5 * `numero_tiques` a  la media de las variables.
+Esta fórmula favorece los factores que facilitan encontrar aparcamiento y penalizan aquellos que no.
+En base a esta puntuación se le asignan 3 niveles: alta, para el máximo, baja, para el mínimo y media, para el restante. Se muestran las distribuciones de las variables los tres niveles de esta medida en el caso de un día por la mañana en fin de semana:
+
+![Distribución de variables por cluster para un día por la mañana en fin de semana](dist_por_cluster.png)
+En este gráfico se puede observar que el nivel Baja corresponde a estacionamientos con pocas plazas para aparcar y distribuciones de ratio de intensidad y media de ocupacion más altos. Sin embargo, para el nivel Alta se observan valores mayores para la distribución de `log_numero_plazas` mientras que las variables relacionadas con tráfico están prácticamente por debajo de 0. En general, los estacionamientos con facilidad de aparcamiento alta tienen mayor número de plazas y menor ratio de intensidad y media de ocupación, mientras que para los aparcamientos con baja facilidad de aparcamiento ocurre todo lo contrario. Ésto se puede consultar en el apartado de [Algoritmo de *clustering*](#algoritmo-de-clustering) del [Anexo](#anexo) en el que se incluyen las distribuciones de las variables en función de los niveles de `facilidad_aparcamiento` para la interpretación de los *clusters*. Se comprueba también que el número de tiques sacados en cada una de las zonas SER no influye en gran medida en la formación de los *clusters* por lo que su proporción a la puntuación de facilidad de aparcamiento se considera a la mitad. El conjunto de todos los datos con la nueva variable `facilidad_aparcamiento` se recoge en `df_final`.
+
+Este dataframe final se usa para informar a la aplicación desarrollada.
+En ésta, dada una ubicación, se muestran las zonas de estacionamiento, situadas en un radio indicado, agrupadas por distintos colores en función de la facilidad de encontrar aparcamiento en ellas.
+Además de los datos históricos usados a lo largo del trabajo, en la aplicación se usan datos de tráfico a tiempo real, presentados en la sección [Descripción de las fuentes y análisis inicial](#descripcion-de-las-fuentes-y-analisis-inicial).
+En particular, se hace uso de la variable `nivelServicio`, la cual informa a partir de cuatro niveles del estado del tráfico: tráfico fluido (0), tráfico lento (1), retenciones (2) y congestión (3). Ésta se asocia con cada zona de aparcamiento de nuevo por cercanía.
+Así, se le asigna a `facilidad_aparcamiento` un nuevo valor en base a la variable `nivelServicio` favoreciendo aquellas zonas en las que el tráfico sea fluido o, a lo sumo, lento.
+
+# Implementación {#implementacion}
+
+En esta sección se comentan los aspectos técnicos relacionados con los procedimientos realizados en el trabajo.
+Todos los ficheros de datos de orígenes y de salida, los archivos de código y demás objetos necesarios para reproducir el trabajo se encuentran en la carpeta de Google Drive a la que se puede acceder pinchando en el enlace: [https://drive.google.com/drive/folders/1fPBtNw-YFMmtE6yJXnV2WCN5jIJQaNzg?usp=drive_link](https://drive.google.com/drive/folders/1fPBtNw-YFMmtE6yJXnV2WCN5jIJQaNzg?usp=drive_link). En esta carpeta hay un fichero `README.txt` con las indicaciones pertinentes.
+
+Por un lado, la mayor parte del trabajo se ha llevado a cabo en RStudio, en un RMarkdown con lenguaje de programación R, a excepción del procesamiento preeliminar de los datos indicado al inicio de la sección [Descripción de las fuentes y análisis inicial](#descripcion-de-las-fuentes-y-analisis-inicial).
+Éste se realizó en un *cluster* de Dataproc en Google Cloud Platform el cual permite el procesamiento distribuido de grandes volúmenes de datos.
+Los datos fueron almacenados en un *bucket* de Cloud Storage y tratados en JupyterLab con lenguaje Python. Se usaron librerías como `pyspark`, para el manejo de datos con millones de filas y `pandas` y `numpy` para operaciones y manipulación de conjuntos de datos más reducidos.
+En la subsección [Tratamiento preeliminar con Spark](#tratamiento-preeliminar-con-spark) del [Anexo](#anexo) se encuentra el código utilizado en JupyterLab para el desarrollo del proceso.
+En la [carpeta de Google Drive](https://drive.google.com/drive/folders/1fPBtNw-YFMmtE6yJXnV2WCN5jIJQaNzg?usp=drive_link) también se encuentra este HTML además del archivo ipynb.
+
+Por otro lado, respecto a las visualizaciones gráficas, se han considerado principalmente las librerías `plotly`, para gráficos interactivos como mapas, treemaps o boxplots, y `ggplot2`, para gráficos estadísticos.
+En cuanto al tratamiento espacial de los datos y las uniones realizadas por cercanía, se utiliza el paquete `sf` y la funciones: `st_as_df`, para la transformación de dataframes en dataframes espaciales, `st_transform`, para la transformación entre coordenadas y `st_nearest_feature`, para hacer uniones por los registros más cercanos.
+
+En el apartado de [Algoritmos de regresión](#algoritmos-de-regresion) del [Anexo](#anexo), en primer lugar se definen los conjuntos de entrenamiento y test mediante la función `createDataPartition` de la librería `caret`, los cuales se consideran con una proporción 70%/30%.
+Luego, para el algoritmo XGBoost se hace uso de la función `xgboost` para el siguiente *pipeline* .
+En primer lugar, los conjuntos de entrenamiento y test se convierten en matrices densas mediante `xgb.DMatrix`, necesario para la aplicación del algoritmo.
+Después, se lleva a cabo refinamiento de parámetros con validación cruzada con la función `xgb.cv`, ésta a partir de un grid de hiperparámetros prueba distintas combinaciones con el fin de minimizar el error cuadrático medio, para ello se toman 5 *folds*, un *early stopping* de 50, para evitar sobreentrenamiento, y 5000 rondas.
+Además, se consideran los hiperparámetros *alpha* y *lambda*, que corresponden respectivamente a regulación L1 y L2, de nuevo para evitar sobreeentrenamiento.
+Por otra parte, el entrenamiento de Random Forest se realiza a partir de su implementación rápida `ranger`. Se sigue el *pipeline* indicado a continuación implementado mediante la librería `caret`: Definición de control de validación cruzada con 5 *folds* mediante la función `trainControl` y entrenamiento del modelo con 500 árboles.
+En la sección anterior se pueden ver los resultados obtenidos para ambos algoritmos para los conjuntos de entrenamiento y de test.
+Las métricas que se consideran para medir la bondad del ajuste son el error cuadrático medio, RMSE, el error medio absoluto, MAE, contenidas en la librería `Metrics` y el coeficiente de determinación, $R^2$.
+Se pueden consultar la documentación de las librerías `xgboost`, `ranger` y `caret` en [Referencias](#referencias).
+
+En lo referente al proceso de *clustering* que se realiza en el trabajo, se considera el paquete `cluster`, del cual se usa la función `kmeans`, para agrupar los datos en distintos grupos y la función `silhouette`, para medir el Silhouette Score para distintos valores de k. También se considera la librería `fpc` la cual incluye la función `clusterboot` para medir la estabilidad de los *clusters*.
+
+Finalmente, los datos de tráfico de tiempo real que se describen al final de la sección [Descripción de las fuentes y análisis inicial](#descripcion-de-las-fuentes-y-analisis-inicial) y que además, se utilizan en la aplicación de búsqueda de aparcamiento inteligente, se encuentran en formato XML y se actualizan cada 5 minutos.
+Para su lectura se utilizan las librerías: `httr`, permite trabajar con URLs, `xml2`, facilita la manipulación de datos XML y `lubridate`, para gestión avanzada de los formatos fecha y hora.
+También, relativo a la aplicación se utiliza el paquete `shiny` para su implementación.
+
+# Resultados y conclusión {#resultados-y-conclusion}
+
+En esta sección se incluyen los resultados obtenidos en el trabajo y se presenta la aplicación de búsqueda inteligente de aparcamiento desarrollada.
+
+En términos generales, los resultados obtenidos indican que los días entre semana por la mañana, al mediodía y por la tarde son los intervalos temporales en los que encontrar aparcamiento es más difícil. Mientras que son las noches o los fines de semana los momentos en los que esta tarea es más sencilla. Esta dinámica se observa principalmente en los porcentajes de registros por *cluster* incluidos en el apartado de [Algoritmo de *clustering*](#algoritmo-de-clustering) del [Anexo](#anexo). En éstos se muestra que en los días entre semana el nivel de `facilidad_aparcamiento` Bajo predomina para los intervalos de la mañana, mediodía y tarde, indicando que son los grupos temporales en los que encontrar aparcamiento supone mayor dificultad. Esta dinámica ya se podía observar para el tráfico mediante la distribución de la variable `media_carga` para los distintos intervalos de tiempo y tipos de días, como que se mostró en la sección [Descripción de las fuentes y análisis inicial](#descripcion-de-las-fuentes-y-analisis-inicial) donde la carga media destacaba principalmente para los días entre semana por la mañana, al mediodía y por la tarde. Ésta información, además, se corresponde con la noticia publicada por la Redacción digital Informativos Telecinco (2024) en la que se comenta que los días más difíciles para encontrar aparcamiento son días entre semana, en particular los martes, miércoles y jueves a las 13 horas y el más fácil el sábado a las 10 de la mañana. En adición, se extrae del estudio realizado que el número de tiques registrado en los parquímetros depende en gran medida del factor temporal, como se intuía en el gráfico presentado en la primera sección que relacionaba `numero_tiques`, `int_tiempo` y `fin_de_semana`, que este valor no tiene niguna relación con el número de plazas del aparcamiento y que depende en cierta medida del tráfico cercano.
+
+La aplicación creada para visualizar los resultados del trabajo se puede encontrar [carpeta de Google Drive](https://drive.google.com/drive/folders/1fPBtNw-YFMmtE6yJXnV2WCN5jIJQaNzg?usp=drive_link) y lee los datos `df_final.csv` generados en el proyecto. Éstos consisten en un dataframe con las zonas SER segmentadas para cada intervalo de tiempo: mañana, mediodía, tarde y noche, y para cada tipo de día: día en fin de semana o día entre semana, en función de la facilidad de aparcamiento. Éstas se dividen en tres niveles: baja, media y alta. La aplicación se crea de manera que se puedan generar ubicaciones aleatorias para simular a una persona conduciendo que busca aparcamiento y, también, que permita seleccionar el radio en el que se desea buscarlo.
+Además, la aplicación, al considerar datos a tiempo real, se refresca automáticamente cada 5 minutos. A continuación se muestran dos salidas de la aplicación para distintas ubicaciones:
+
+![](captura_app_buena_1.png)
+
+Como se puede observar al pinchar sobre cada una de las zonas de aparcamiento se muestra la calle correspondiente, el barrio, el distrito, el número de finca, el número de plazas, el color del aparcamiento, el tipo de aparcamiento (batería o línea) y el nivel de servicio asignado. Esta información nos da una idea acerca del tráfico de la calle en el momento actual y de las cualidades del aparcamiento. 
+
+![](captura_app_buena_2.png)
+
+En ambos casos se indica la ubicación en la que se encontraría el usuario y las zonas de aparcamiento dentro del radio seleccionado. Las zonas en verde indican facilidad de aparcamiento alta, las rojas facilidad baja y las amarillas facilidad media.
+
+Se debe tener en cuenta que para el trabajo se han considerado datos de enero a junio de 2025, al tomar las medias de las medidas se asumen que los datos son representativos y se pueden considerar válidos como reflejo del año completo. Un enfoque interesante podría haber sido considerar todos los datos de 2024 para realizar el estudio en datos de un año completo. Por otro lado, se podrían haber considerado más cualidades procedentes de los datos de parquímetros como el tiempo de los tiques o el precio de éstos, aunque no se ha hecho por la extensión del trabajo. También, se podría haber tenido en cuenta una mayor granularidad en los datos, como por ejemplo considerar cada día de la semana por separado y no solo agruparlos en dos conjuntos, los días de lunes a viernes y el fin de semana, pero se ha considerado que esta agrupación reflejaba mejor el comportamiento que se quería mostrar en el proyecto. Además, respecto al análisis de *clustering* que se lleva a cabo se podrían haber usado técnicas para mejorar la separación entre los *clusters* o probar distintos enfoques que no conllevasen considerar distintos subgrupos para cada intervalo de tiempo y tipo de día. Se podría extender el trabajo considerando además información sobre metereología o eventos de interés, los cuales también influyen en la circulación urbana. 
+
+En conclusión, el trabajo muestra la dinámica de factores que afectan al aparcamiento, como son el tráfico, el número de tiques registrados en parquímetros o el número de plazas de cada zona de estacionamiento. Asimismo, a partir de técnicas de regresión se ha podido predecir cualidades en zonas SER que no poseían información de parquímetros. También, mediante un análisis de *clustering* se han segmentado las zonas de estacionamiento para los grupos temporales considerados a lo largo del trabajo, y a partir de esta clasificación se ha realizado una aplicación de recomendación de aparcamiento interactiva que muestra visualmente los resultados obtenidos.
+
+# Referencias {#referencias}
+
+-   Ionita, A., Pomp, A., Cochez, M., Meisen, T., & Decker, S.
+    (2018, June).
+    Where to park?
+    predicting free parking spots in unmonitored city areas.
+    In Proceedings of the 8th International Conference on Web Intelligence, Mining and Semantics (pp. 1-12).
+
+-   Documentación del paquete `xgboost`, <https://cran.r-project.org/web/packages/xgboost/index.html>.
+
+-   Documentación del paquete `ranger`, <https://cran.r-project.org/web/packages/ranger/index.html>
+
+-   Documentación del paquete `caret`, <https://cran.r-project.org/web/packages/caret/index.html>
+
+-   Lidia Vega.
+    (2024, 18 de julio).
+    *Aparcar en la ciudad, misión imposible: por qué tu coche ya no entra en ningún sitio*.
+    Business Insider.
+    Recuperado de <https://www.businessinsider.es/movilidad/aparcar-ciudad-mision-imposible-coche-ya-no-entra-ningun-sitio-1390595>.
+
+-   Redacción digital Informativos Telecinco.
+    (2024, 3 de diciembre).
+    *¿Cuándo es más fácil aparcar? El día y la hora en la que seguramente encuentres sitio*.
+    Telecinco Noticias.
+    Recuperado de <https://www.telecinco.es/noticias/sociedad/20241203/cuando-es-mas-dificil-aparcar_18_014182581.html>
+
+# Anexo {#anexo}
+
+En el anexo del trabajo se incluye, en primer lugar, el HTML generado en JupyterLab para el tratamiento inicial de los datos con Spark y, después, el código R para replicar los procesos descritos en el trabajo.
+
+## Tratamiento Preeliminar con Spark {#tratamiento-preeliminar-con-spark}
+
+A continuación, se incrusta el HTML generado en JupyterLab donde se han tratado incialmente los datos con `pyspark`.
+En la [carpeta de Google Drive](https://drive.google.com/drive/folders/1fPBtNw-YFMmtE6yJXnV2WCN5jIJQaNzg?usp=drive_link) se encuentra este HTML además del archivo ipynb. Los enlaces incluidos en el siguiente fichero se deben abrir en una nueva pestaña para su correcto funcionamiento. 
+
+```{r, results='asis', echo=FALSE}
+htmltools::tags$iframe(
+  src = "final_spark.html",
+  width = "100%",
+  height = "600px",
+  frameborder = "0"
+)
+```
+
+## Código Principal {#codigo-principal}
+
+```{r, message=FALSE, warning=FALSE}
+# Se incluyen los paquetes necesarios
+library(readr) # Lectura eficiente de archivos tabulares 
+library(dplyr) # Librería de manipulación de datos
+library(data.table) # Librería de manipulación de datos rápida
+library(sf) # Librería para el manejo de datos espaciales
+library(purrr) # Librería programación Funcional tidyverse
+library(tidyr) # Librerái para limpieza de datos
+library(ggplot2) # Librería gráfica
+library(plotly) # Librería gráfica interactiva
+library(caret) # Librería para el entrenamiento y visualización de modelos de regresión 
+library(xgboost) # Librería del algoritmo XGBoost
+library(ranger) # Librería del algoritmo Random Forest de implementación rápida
+library(Metrics) # Librería que implementa las principales métricas de evaluación para modelos de aprendizaje supervisados
+library(patchwork) # Para trabajar con combinaciones de graficos ggplot
+library(ggcorrplot) # Librería para mostrar matrices de correlación entre variables numéricas
+library(lmtest) # Librería que contiene test para medir la bondad de los modelos de regresión
+library(gridExtra) # Librería que permite visualizar gráficos a modo de grid
+library(cluster) # Librería con funciones de segmentación
+library(factoextra) # Librería para representación gráfica de los clusters
+library(RColorBrewer) # Librería con paletas de colores para visualizaciones
+library(recipes) # Librería para procesado de variables, forma parte de tidymodels
+library(ggridges) # Librería para visualización gráfica con ggplot2
+library(viridis) # Librería para paleta de colores
+library(fpc) # Librería para estudiar estabilidad de los clusters
+```
+
+```{r}
+# Lectura de los datos 
+calles_ser <- read_csv("calles_ser_df.csv", show_col_types = FALSE)
+aparcamientos_info <- read_csv("parking_info_df.csv", , show_col_types = FALSE)
+trafico_df <- read_csv("trafico_df.csv", , show_col_types = FALSE)
+```
+
+### Análisis Exploratorio de los Datos {#analisis-exploratorio-de-los-datos}
+
+#### Análisis dataframe `calles_ser`
+
+```{r}
+# Se muestran las 5 primeras filas de los datos
+head(calles_ser, 5)
+```
+
+```{r}
+# Tipo de datos de las variables
+glimpse(calles_ser)
+```
+
+```{r}
+# Se transforman las variables categóricas a tipo factor
+var_factor <- c('distrito','barrio', 'color', 'bateria_linea')
+
+calles_ser <- calles_ser %>%
+  mutate(across(all_of(var_factor), as.factor))
+```
+
+```{r}
+# Dimensiones del dataframe
+dim(calles_ser)
+```
+
+```{r}
+# Se comprueba si hay hay valores nulos
+sapply(calles_ser, function(x) sum(is.na(x)))
+```
+
+```{r}
+# Se comprueban duplicados
+duplicados <- calles_ser[duplicated(calles_ser) | duplicated(calles_ser, fromLast = TRUE), ]
+
+print(duplicados)
+```
+
+Tras un análisis inicial básico se realiza un análisis univariante de las distintas variables:
+
+-   `distrito`:
+
+```{r}
+# Número de distritos únicos
+length(unique(calles_ser$distrito))
+
+# Distritos únicos
+unique(calles_ser$distrito)
+
+# Frecuencias por distrito
+frecuencias_distrito <- calles_ser %>%
+  count(distrito, name = "frecuencia") %>%
+  arrange(desc(frecuencia))
+
+# Se fuerza el orden del factor distrito para ver en el gráfico los distritos ordenados por frecuencia
+frecuencias_distrito$distrito <- factor(frecuencias_distrito$distrito, levels = frecuencias_distrito$distrito)
+
+# Se muestra un gráfico de barras para estudiar la frecuencia de los distintos distritos
+plot_ly(frecuencias_distrito, x = ~distrito, y = ~frecuencia, type = 'bar',
+               text = ~frecuencia, textposition = 'outside',
+               marker = list(color = ~frecuencia, colorscale = 'Viridis')) %>%
+  layout(title = "Gráfico de barras distritos",
+         xaxis = list(title = "Distritos", tickangle = -45),
+         yaxis = list(title = "Frecuencia"))
+```
+
+Hay 13 distritos distintos, siendo el distrito de Chamartín el que tiene el mayor número de zonas de Servicio de Estacionamiento Regulado en sus calles, 6017, y Carabanchel el que menos con solo 18.
+
+-   `barrio`:
+
+```{r}
+# Número de barrios únicos
+length(unique(calles_ser$barrio))
+
+# Barrios únicos
+unique(calles_ser$barrio)
+
+# Se obtiene la frecuencia de los 20 barrios que más aparecen en los datos
+frecuencias_barrios <- calles_ser %>%
+  count(barrio, name = "frecuencia") %>%
+  top_n(20, frecuencia) %>%
+  arrange(desc(frecuencia))
+
+# Se fuerza el orden del factor barrio para ver en el gráfico los barrios ordenados por frecuencia
+frecuencias_barrios$barrio <- factor(frecuencias_barrios$barrio, levels = frecuencias_barrios$barrio)
+
+# Gráfico de barras barrios
+plot_ly(frecuencias_barrios, x = ~barrio, y = ~frecuencia, type = 'bar',
+               text = ~frecuencia, textposition = 'outside',
+               marker = list(color = ~frecuencia, colorscale = 'Viridis')) %>%
+  layout(title = "Gráfico de barras barrios",
+         xaxis = list(title = "Barrios", tickangle = -45),
+         yaxis = list(title = "Frecuencia"))
+
+```
+
+Se tienen un total de 63 barrios distintos en los datos de los cuales se muestran los 20 más frecuentes en el gráfico de barras, vemos que los que destacan por tener un mayor número de zonas SER son El Viso, Guindalera y Ventas.
+
+-   `calle`:
+
+```{r}
+# Número de barrios únicos
+length(unique(calles_ser$calle))
+
+# Se obtiene la frecuencia de las 20 calles que más aparecen en los datos
+frecuencias_calles <- calles_ser %>%
+  count(calle, name = "frecuencia") %>%
+  top_n(20, frecuencia) %>%
+  arrange(desc(frecuencia))
+
+# Se fuerza el orden del factor barrio para ver en el gráfico las calles ordenados por frecuencia
+frecuencias_calles$calle <- factor(frecuencias_calles$calle, levels = frecuencias_calles$calle)
+
+# Gráfico de barras calles
+plot_ly(frecuencias_calles, x = ~calle, y = ~frecuencia, type = 'bar',
+               text = ~frecuencia, textposition = 'outside',
+               marker = list(color = ~frecuencia, colorscale = 'Viridis')) %>%
+  layout(title = "Gráfico de barras calles",
+         xaxis = list(title = "Calles", tickangle = -45),
+         yaxis = list(title = "Frecuencia"))
+
+```
+
+Se observa que en los datos hay 2418 calles diferentes, siendo el Paseo de la Catellana la calle con más zonas de estacionamiento.
+Se muestran la información de esta calle en más detalle:
+
+```{r}
+calles_ser %>%
+  select(barrio, color, bateria_linea, numero_plazas, calle, distrito) %>%
+  filter(calle == "CASTELLANA, PASEO, DE LA") %>%
+  summary()
+```
+
+Las zonas SER del Paseo de la Castellana consisten en 112 zonas verdes, 157 zonas azules y 2 zonas de alta rotación.
+La mayoría de éstas tienen entre 1 y 5 plazas de aparcamiento, aunque hay registros de zonas con 27 plazas.
+Se muestra también que la propia calle se distribuye en distintos barrios y 5 distritos.
+Se muestra el total de número de plazas de la calle:
+
+```{r}
+calles_ser %>%
+  filter(calle == "CASTELLANA, PASEO, DE LA") %>%
+  summarise(total_plazas = sum(numero_plazas, na.rm = TRUE))
+```
+
+-   `bateria_linea`:
+
+```{r}
+# Tabla de frecuencias de la variable bateria_linea
+frecuencias_baterialinea <- calles_ser %>%
+  count(bateria_linea, name = "frecuencia")
+
+print(frecuencias_baterialinea)
+
+# Se ajustan los colores para los dos niveles
+colores_aux <- colorRampPalette(brewer.pal(8, "Set3"))(nrow(frecuencias_baterialinea))
+
+# Gráfico de sectores variable bateria_linea
+plot_ly(
+  frecuencias_baterialinea,
+  labels = ~bateria_linea,
+  values = ~frecuencia,
+  type = 'pie',
+  textinfo = 'percent+label',
+  marker = list(colors = colores_aux)
+)
+```
+
+El 76.8% de los aparcamientos son en línea y solo un 23.2% son en batería.
+
+-   `color`:
+
+```{r}
+frecuencias_colores <- calles_ser %>%
+  count(color, name = "frecuencia") %>%
+  mutate(color = factor(color, levels = names(colores_aparcamiento)))
+
+print(frecuencias_colores)
+
+# Gráfico de sectores variable color
+plot_ly(frecuencias_colores, labels = ~color, values = ~frecuencia,
+               type = 'pie', textinfo = 'percent+label',
+               marker = list(colors = colores_aparcamiento[frecuencias_colores$color]))
+```
+
+La gran mayoría de las zonas de aparcamiento son verdes, para uso residencial, seguidas de zonas azules, de uso rotacional, mientras que el resto son zona roja, naranja y de alta rotación las cuales no llegan en conjunto ni a un 0.5% del total de los datos.
+
+-   `numero_plazas`:
+
+```{r}
+summary(calles_ser$numero_plazas)
+sum(calles_ser$numero_plazas)
+```
+
+```{r}
+subplot(
+  # Boxplot
+  plot_ly(calles_ser, x = ~numero_plazas, type = "box", name = "Boxplot", boxpoints = "outliers"),
+  # Histograma
+  plot_ly(calles_ser, x = ~numero_plazas, type = "histogram", nbinsx = 30, name = "Histograma"),
+  nrows = 2,
+  shareX = TRUE,
+  heights = c(0.25, 0.75),
+  titleX = TRUE,
+  titleY = TRUE
+) %>% layout(
+  title = paste0('Distribución de numero_plazas'),
+  showlegend = FALSE,
+  yaxis2 = list(title = "Frecuencia")
+)
+```
+
+La distribución de la variable `numero_plazas` indica que para las zonas de estacionamiento el número de plazas oscila mayoritariamente entre 1 y 7 aunque hay zonas de hasta 183 plazas.
+
+```{r}
+# Se estudia en más detalle la(s) zona(s) de 183 plazas
+calles_ser %>%
+  select(barrio, color, bateria_linea, numero_plazas, calle, distrito) %>%
+  filter(numero_plazas == 183) 
+```
+La zona de estacionamiento correspondiente al número máximo de plazas es una zona naranja situada en Cada de Campo, en particular en la Calle de la Rosaleda.
+
+Una vez se han estudiado todas las variables de manera individual se procede a una análisis multivariante de los datos.
+
+-   `distrito`, `barrio` y `numero_plazas`:
+
+```{r}
+df_nplazas_barrio_distrito <- calles_ser %>%
+  group_by(distrito, barrio) %>%
+  summarise(numero_plazas = sum(numero_plazas), .groups = "drop")
+
+# Identificadores únicos como distrito_barrio
+df_nplazas_barrio_distrito <- df_nplazas_barrio_distrito %>%
+  mutate(id = paste0(distrito, "_", barrio),
+         parents = distrito)
+
+# Transformaciones necesarias para crear los distritos como  nodos padre
+df_padres <- df_nplazas_barrio_distrito %>%
+  group_by(distrito) %>%
+  summarise(numero_plazas = sum(numero_plazas), .groups = "drop") %>%
+  mutate(id = distrito,
+         barrio = distrito,
+         parents = "") %>%
+  select(names(df_nplazas_barrio_distrito))
+
+df_nplazas_treemap <- bind_rows(df_padres, df_nplazas_barrio_distrito)
+
+# Treemap por distrito, barrio y número de plazas
+plot_ly(
+  df_nplazas_treemap,
+  type = "treemap",
+  labels = ~barrio,
+  parents = ~parents,
+  values = ~numero_plazas,
+  ids = ~id,
+  textinfo = "label+value",
+  branchvalues = "total"
+)
+```
+
+Se puede observar en el gráfico de árbol que el distrito con mayor número de plazas es Chamartín siendo Nueva España el barrio con más plazas dentro de ese distrito, seguido de Ciudad Lineal con Ventas como el más destacado.
+Carabanchel es el distrito con menos plazas, estando este número por debajo de 500. Como se puede notar los resultados obtenidos van en consonancia con el estudio realizado de la frecuencia de los distintos distritos,
+
+-   `calle` y `numero_plazas`:
+
+```{r}
+top_10_calles_por_nplazas <- calles_ser %>%
+  group_by(calle) %>%
+  summarise(total_plazas = sum(numero_plazas, na.rm = TRUE)) %>%
+  arrange(desc(total_plazas)) %>%
+  slice_head(n = 10)
+
+# Se muestran las 10 calles con mayor número de plazas
+plot_ly(
+  data = top_10_calles_por_nplazas,
+  x = ~total_plazas,
+  y = ~reorder(calle, total_plazas),
+  type = "bar",
+  orientation = "h",  # horizontal
+  marker = list(color = "steelblue")
+) %>%
+  layout(
+    title = "Top 10 calles con mayor número de plazas",
+    xaxis = list(title = "Número de plazas"),
+    yaxis = list(title = "Calle")
+  )
+
+```
+
+Se observa que la calle con más plazas de aparcamiento es el Paseo de la Castellana con 1201 plazas, dato que ya se había comentado.
+En el gráfico de barras se muestran las 10 calles con mayor número de datos, se aprecia una gran diferencia, de 200 plazas, entre el paseo de la Catellana y Avenida de Monforte de Lemos, y de esta última con Calle de Melchor Fernández Almagro, de 349 plazas menos.
+
+Finalmente vemos un mapa de la locaclización de las zonas SER en Madrid según su color:
+
+```{r}
+calles_ser <- calles_ser %>%
+  mutate(color = factor(color, levels = c("Azul","Verde","Alta Rotación","Rojo","Naranja")))
+
+colores_aparcamiento <- c("Azul"="blue","Verde"="green","Rojo"="red","Naranja"="orange","Alta Rotación"="purple")
+
+# Mapa zonas SER
+plot_ly(
+  calles_ser,
+  lat = ~latitud,
+  lon = ~longitud,
+  type = 'scattermapbox',
+  mode = 'markers',
+  color = ~color,             
+  colors = colores_aparcamiento,         
+  marker = list(size = 4, symbol = 'circle'),
+  text = ~paste0(
+    "<b>Calle:</b> ", calle, "<br>",
+    "<b>Número finca:</b> ", numero_finca, "<br>",
+    "<b>Barrio:</b> ", barrio, "<br>",
+    "<b>Distrito:</b> ", distrito, "<br>",
+    "<b>Número de plazas:</b> ", numero_plazas
+  ),
+  hovertemplate = "%{text}<extra></extra>"
+) %>%
+  layout(
+    mapbox = list(
+      style = "carto-positron",
+      center = list(lat = mean(calles_ser$latitud), lon = mean(calles_ser$longitud)),
+      zoom = 11
+    ),
+    title = "Mapa de zonas SER",
+    legend = list(
+      title = list(text = "Tipo de zona de aparcamiento")
+    )
+  )
+```
+
+Efectivamente podemos observar como las zonas verdes ocupan la gran mayoría del mapa, seguidas de las zonas azules.
+
+#### Análisis dataframe `trafico_df`
+
+```{r}
+# Se muestra la estructura de los datos
+glimpse(trafico_df)
+```
+
+```{r}
+# Se cambian las variables categóricas a factor
+trafico_df <- trafico_df %>%
+  mutate(across(c(fin_de_semana, int_tiempo), as.factor))
+
+summary(trafico_df)
+```
+
+```{r}
+# Se comprueban los valores nulos del dataframe
+sapply(trafico_df, function(x) sum(is.na(x)))
+```
+
+```{r}
+# Se comprueban los duplicados del dataframe
+duplicados <- trafico_df[duplicated(trafico_df) | duplicated(trafico_df, fromLast = TRUE), ]
+
+duplicados
+```
+
+Se realiza un estudio univariante de las variables.
+Las numéricas se muestran mediante un histograma y un boxplot para entender de manera adecuada la distribución de los datos.
+
+* `media_intensidad`:
+
+```{r}
+# Distribución variable media_intensidad
+subplot(
+  # Boxplot
+  plot_ly(trafico_df, x = ~media_intensidad, type = "box", name = "Boxplot", boxpoints = "outliers"),
+  # Histograma
+  plot_ly(trafico_df, x = ~media_intensidad, type = "histogram", nbinsx = 30, name = "Histograma"),
+  nrows = 2,
+  shareX = TRUE,
+  heights = c(0.25, 0.75),
+  titleY = TRUE
+) %>% layout(
+  title = paste0('Distribución de media_intensidad'),
+  showlegend = FALSE,
+  yaxis2 = list(title = "Frecuencia")
+)
+```
+
+Se observa que la intensidad media oscila principalmente entre 0 y 877, lo cual indica el número medio de coches que pasan por cada detector de tráfico por hora para cada intervalo de tiempo considerado y tipo de día.
+Dado que los intervalos de tiempo considerados en el trabajo son de 6 horas, de media pasan entre 0 y 5265 coches a la hora dependiendo del intervalo de tiempo y del día por cada punto de medición de tráfico.
+Se puede observar una distribución muy asimétrica hacia la izquierda lo cual cabe esperarse puesto que los datos reales tienden a presentar muchas fluctuaciones.
+
+-   `media_ocupacion`:
+
+```{r}
+# Distribución variable media_ocupacion
+subplot(
+  # Boxplot
+  plot_ly(trafico_df, x = ~media_ocupacion, type = "box", name = "Boxplot", boxpoints = "outliers"),
+  # Histograma
+  plot_ly(trafico_df, x = ~media_ocupacion, type = "histogram", nbinsx = 30, name = "Histograma"),
+  nrows = 2,
+  shareX = TRUE,
+  heights = c(0.25, 0.75),
+  titleY = TRUE
+) %>% layout(
+  title = paste0('Distribución de media_ocupacion'),
+  showlegend = FALSE,
+  yaxis2 = list(title = "Frecuencia")
+)
+```
+
+La ocupación media mide el porcentaje de tiempo medio que se tira un medidor de tráfico ocupado por un coche. En general, es porcentaje entre un 0 y un 13% del tiempo. Esto dependerá en gran medida del intervalo de tiempo y tipo de día correspondiente, lo cual se estudia más adelante. De nuevo la distribución presenta mucha asimetría positiva.
+
+-   `media_carga`
+
+```{r}
+# Distribución variable media_carga
+subplot(
+  # Boxplot
+  plot_ly(trafico_df, x = ~media_carga, type = "box", name = "Boxplot", boxpoints = "outliers"),
+  # Histograma
+  plot_ly(trafico_df, x = ~media_carga, type = "histogram", nbinsx = 30, name = "Histograma"),
+  nrows = 2,
+  shareX = TRUE,
+  heights = c(0.25, 0.75),
+  titleY = TRUE
+) %>% layout(
+  title = paste0('Distribución de media_carga'),
+  showlegend = FALSE,
+  yaxis2 = list(title = "Frecuencia")
+)
+```
+
+La carga media de las carreteras oscila entre 0 y 50, lo cual indica que el 100, que sería colapso por la descripción de la variable, es algo que ocurre muy raramente.
+Es notable también que puesto que la carga va de 0 a 100, su distribución es mucho más relajada que para las dos variables mostradas anteriormente.
+
+-   `int_tiempo`
+
+```{r}
+frecuencias_int_tiempo <- trafico_df %>%
+  count(int_tiempo, name = "frecuencia")
+
+print(frecuencias_int_tiempo)
+
+plot_ly(frecuencias_int_tiempo, labels = ~int_tiempo, values = ~frecuencia,
+               type = 'pie', textinfo = 'percent+label',
+               marker = list(colors = RColorBrewer::brewer.pal(n = nrow(frecuencias_int_tiempo), name = "Set2")))
+```
+
+-   `fin_de_semana`
+
+```{r, warning=FALSE}
+frecuencias_dia_semana <- trafico_df %>%
+  count(fin_de_semana, name = "frecuencia")
+
+print(frecuencias_dia_semana)
+
+plot_ly(frecuencias_dia_semana, labels = ~fin_de_semana, values = ~frecuencia,
+               type = 'pie', textinfo = 'percent+label',
+               marker = list(colors = RColorBrewer::brewer.pal(n = nrow(frecuencias_dia_semana), name = "Set2")))
+```
+
+Se puede observar en los diagramas de sectores que tanto los intervalos de tiempo como los tipos de días se distribuyen de manera equitativa, ésto indica que son datos válidos para llevar a cabo un estudio representativo.
+Se estudian ahora las variables en conjunto.
+Se comienza por mostrar el comportamiento de las medidas de tráfico dos a dos.
+
+```{r}
+variables <- c("media_intensidad", "media_ocupacion", "media_carga")
+
+ggpairs(trafico_df[, variables]) + theme_minimal()
+```
+
+Destaca la correlación positiva de la variable `media_carga` con `media_intensidad` y `media_ocupacion`.
+Se pinta ahora el comportamiento de las variables de tráfico en función de los distintos intervalos de tiempo que vienen dados por la variable `int_tiempo` y por los tipos de día, dados por `fin_de_semana`.
+
+*`int_tiempo`, `fin_de_semana`, `media_intensidad`:
+
+```{r,warning=FALSE}
+# Distribución de la variable media_intensidad por int_tiempo y por fin_de_semana
+plot_ly(
+  data = trafico_df,
+  x = ~int_tiempo,
+  y = ~media_intensidad,
+  type = "box",
+  color = ~factor(fin_de_semana, labels = c("Día entre semana", "Día fin de semana")),
+  colors = c("steelblue", "tomato")
+) %>%
+layout(
+  title = "Distribución de media_intensidad por intervalo de tiempo y tipo de día",
+  xaxis = list(title = "Tramo horario"),
+  yaxis = list(title = "Media de intensidad"),
+  boxmode = "group"
+)
+```
+
+
+*`int_tiempo`, `fin_de_semana`, `media_ocupacion`:
+
+
+```{r,warning=FALSE}
+# Distribución de la variable media_ocupacion por int_tiempo y por fin_de_semana
+plot_ly(
+  data = trafico_df,
+  x = ~int_tiempo,
+  y = ~media_ocupacion,
+  type = "box",
+  color = ~factor(fin_de_semana, labels = c("Día entre semana", "Día fin de semana")),
+  colors = c("steelblue", "tomato")
+) %>%
+layout(
+  title = "Distribución de media_ocupacion por intervalo de tiempo y tipo de día",
+  xaxis = list(title = "Tramo horario"),
+  yaxis = list(title = "Media de ocupación"),
+  boxmode = "group"
+)
+```
+
+
+*`int_tiempo`, `fin_de_semana`, `media_carga`:
+
+
+```{r,warning=FALSE}
+# Distribución de la variable media_carga por int_tiempo y por fin_de_semana
+plot_ly(
+  data = trafico_df,
+  x = ~int_tiempo,
+  y = ~media_carga,
+  type = "box",
+  color = ~factor(fin_de_semana, labels = c("Día entre semana", "Día fin de semana")),
+  colors = c("steelblue", "tomato")
+) %>%
+layout(
+  title = "Distribución de media_carga por intervalo de tiempo y tipo de día",
+  xaxis = list(title = "Tramo horario"),
+  yaxis = list(title = "Media de carga"),
+  boxmode = "group"
+)
+```
+
+Estos tres gráficos muestran un mayor tráfico los días entre semana, principalmente al mediodía, aunque también por la mañana y por la tarde. Para los días en fin de semana, las medidas destacan al mediodía y por la tarde. Y por la noche, independientemente del tipo de día, el tráfico es bajo aunque mayor los fines de semana que entre semana.
+Se muestra a continuación un Mapa que localiza los puntos de medición del tráfico en Madrid
+
+```{r}
+# Mapa con la ubicación de los puntos de medición de tráfico en Madrid
+plot_ly(
+  data = trafico_df,
+  lat = ~latitud,
+  lon = ~longitud,
+  type = 'scattermapbox',
+  mode = 'markers',
+  marker = list(
+    size = 3,
+    color = 'black',
+    symbol = 'circle'
+  ),
+  name = ''
+) %>%
+layout(
+  mapbox = list(
+    style = "carto-positron",
+    center = list(lat = mean(trafico_df$latitud), lon = mean(trafico_df$longitud)),
+    zoom = 9
+  ),
+  title = "Mapa de puntos de medida de tráfico de Madrid",
+  showlegend = FALSE
+)
+```
+
+#### Análisis dataframe `aparcamientos_info`
+
+```{r}
+# Se muestran los primeros registros de los datos
+head(aparcamientos_info)
+```
+
+```{r}
+# Estructura del dataframe
+glimpse(aparcamientos_info)
+```
+
+```{r}
+# Se cambian las variables categóricas a factor
+aparcamientos_info <- aparcamientos_info %>%
+  mutate(across(c(fin_de_semana, bateria_linea, color, int_tiempo), as.factor))
+
+# Se muestra un resumen de las variables que aportan más información
+summary(aparcamientos_info[,c('numero_tiques','numero_plazas','int_tiempo','color', 'bateria_linea' ,'fin_de_semana')])
+```
+
+```{r}
+# Dimensión del dataframe
+dim(aparcamientos_info)
+```
+
+```{r}
+# Se comprueban valores nulos
+sapply(aparcamientos_info, function(x) sum(is.na(x)))
+```
+
+```{r}
+# Se comprueban duplicados
+duplicados <- aparcamientos_info[duplicated(aparcamientos_info) | duplicated(aparcamientos_info, fromLast = TRUE), ]
+
+print(duplicados)
+```
+
+Análisis univariante de las variables:
+
+-   `numero_tiques`
+
+```{r}
+# Distribución de numero_tiques
+subplot(
+    # Boxplot 
+    plot_ly(aparcamientos_info, x = ~numero_tiques, type = "box", name = "Boxplot", boxpoints = "outliers"),
+    # Histograma 
+    plot_ly(aparcamientos_info, x = ~numero_tiques, type = "histogram", nbinsx = 30, name = "Histograma"),
+    nrows = 2,
+    shareX = TRUE,
+    heights = c(0.25, 0.75),
+    titleY = TRUE
+  ) %>% 
+    layout(
+      title = paste0('Distribución de ', "numero_tiques"),
+      showlegend = FALSE,
+      yaxis2 = list(title = "Frecuencia")
+  )
+```
+
+El número medio de tiques sacados en las zonas SER con parquímetro es en su gran mayoría entre 1 y 900.
+Se observa un dato en particular con más de 5000 tiques registrados para cierto intervalo de tiempo y tipo de día.
+Se consulta este caso:
+
+```{r}
+datatable(aparcamientos_info[which.max(aparcamientos_info$numero_tiques), ], options = list(scrollX = TRUE, autoWidth = TRUE))
+```
+
+El máximo de número de tiques se alcanza un día entre semana al medio día en un parquímetro de la Calle de Marcelo Usera del barrio Moscardo, siendo esta una zona de estacionamiento con dos plazas únicamente.
+
+```{r}
+datatable(aparcamientos_info[which.min(aparcamientos_info$numero_tiques), ], options = list(scrollX = TRUE, autoWidth = TRUE))
+```
+
+El menor número de tiques es 1 para un día entre semana por la noche en UN parquímetro de la Calle de Agastia, correspondiente a una zona con 18 plazas de aparcamiento.
+
+-   `int_tiempo`
+
+```{r}
+# Distribución int_tiempo
+frecuencias_int_tiempo <- aparcamientos_info %>%
+  count(int_tiempo, name = "frecuencia")
+
+print(frecuencias_int_tiempo)
+
+plot_ly(frecuencias_int_tiempo, labels = ~int_tiempo, values = ~frecuencia,
+               type = 'pie', textinfo = 'percent+label',
+               marker = list(colors = RColorBrewer::brewer.pal(n = nrow(frecuencias_int_tiempo), name = "Set2")))
+```
+
+-   `fin_de_semana`
+
+```{r}
+# Distribución fin_de_semana
+frecuencias_dia_semana <- aparcamientos_info %>%
+  count(fin_de_semana, name = "frecuencia")
+
+print(frecuencias_dia_semana)
+
+plot_ly(frecuencias_dia_semana, labels = ~fin_de_semana, values = ~frecuencia,
+               type = 'pie', textinfo = 'percent+label',
+               marker = list(colors = RColorBrewer::brewer.pal(n = nrow(frecuencias_dia_semana), name = "Set2")))
+```
+
+Los niveles de las variables `int_tiempo` y `fin_de_semana` se distribuyen de manera casi equitativa, aunque Noche es el intervalo temporal menos informado. Al tratarse un subconjunto del dataframe `calles_ser` con información adicional de tiques se estudian por encima algunas de las variables heredadas de este dataframe.
+
+-   `numero_plazas`
+
+```{r}
+# Se muestra la distribución de la variable mediante un histograma y un boxplot
+subplot(
+    # Boxplot 
+    plot_ly(aparcamientos_info, x = ~numero_plazas, type = "box", name = "Boxplot", boxpoints = "outliers"),
+    # Histograma 
+    plot_ly(aparcamientos_info, x = ~numero_plazas, type = "histogram", nbinsx = 30, name = "Histograma"),
+    nrows = 2,
+    shareX = TRUE,
+    heights = c(0.25, 0.75),
+    titleY = TRUE
+  ) %>% 
+    layout(
+      title = paste0('Distribución de ', "numero_plazas"),
+      showlegend = FALSE,
+      yaxis2 = list(title = "Frecuencia")
+  )
+```
+
+-   `calle`
+
+```{r}
+unique(aparcamientos_info$distrito)
+```
+
+-   `color`
+
+```{r}
+# Tabla de frecuencias de la variable bateria_linea
+frecuencias_colores <- aparcamientos_info %>%
+  count(color, name = "frecuencia") %>%
+  mutate(color = factor(color, levels = names(colores_aparcamiento)))
+
+# Gráfico de sectores variable color
+plot_ly(frecuencias_colores, labels = ~color, values = ~frecuencia,
+               type = 'pie', textinfo = 'percent+label',
+               marker = list(colors = colores_aparcamiento[frecuencias_colores$color]))
+```
+
+Análisis multivariante de los datos
+
+-   `numero_plazas` y `numero_tiques`
+
+```{r}
+# Se muestra mediante un scatterplot la distribución del número de plazas frente al número de tiques
+ggplot(aparcamientos_info, aes(x = numero_tiques, y = numero_plazas)) +
+  geom_point(color = "steelblue", size = 3, alpha = 0.7) +
+  labs(
+    x = "Número de tiques",
+    y = "Número de plazas"
+  ) +
+  theme_minimal() 
+```
+
+Se observa que se sacan más tiques para zonas de aparcamiento con menor número de plazas que al contrario.
+
+```{r}
+# Se calcula la correlación entre las variables
+correlacion <- cor(aparcamientos_info$numero_tiques, aparcamientos_info$numero_plazas, use = "complete.obs")
+print(correlacion)
+```
+
+El resultado de la correlación indica que las variables prácticamente no están relacionadas.
+
+-   `int_tiempo`, `fin_de_semana` y `numero_tiques`
+
+```{r, warning=FALSE}
+aparcamientos_info$int_tiempo <- factor(aparcamientos_info$int_tiempo, levels = c("Mañana","Mediodia","Tarde","Noche"))
+
+plot_ly(
+  data = aparcamientos_info,
+  x = ~int_tiempo,
+  y = ~numero_tiques,
+  type = "box",
+  color = ~factor(fin_de_semana, labels = c("Día entre semana", "Día fin de semana")),
+  colors = c("steelblue", "tomato")
+) %>%
+layout(
+  title = "Distribución de numero_tiques por intervalo de tiempo y tipo de día",
+  xaxis = list(title = "Tramo horario"),
+  yaxis = list(title = "numero_tiques"),
+  boxmode = "group"
+)
+```
+
+El número de tiques registrados los días entre semana es claramente mayor que los fines de semana. En particular, de lunes a viernes destaca al mediodía, seguido de la mañana y por la tarde.
+
+-   `numero_tiques` y `color`
+
+```{r}
+plot_ly(
+  data = aparcamientos_info,
+  x = ~color,
+  y = ~numero_tiques,
+  type = "violin",
+  box = list(visible = TRUE),
+  meanline = list(visible = TRUE),
+  color = ~color,
+  colors = colores_aparcamiento
+)
+```
+
+Finalmente se muestra en un mapa las zonas SER informadas con datos de tiques de parquímetros, en azul, y las no informadas, en gris.
+
+```{r}
+aparcamientos_no_info <- calles_ser %>%
+  anti_join(
+    aparcamientos_info %>% select(gis_x, gis_y),
+    by = c("gis_x", "gis_y")
+  )
+
+calles_ser <- calles_ser %>%
+  mutate(zona_informada = ifelse(paste(gis_x, gis_y) %in% 
+                                paste(aparcamientos_no_info$gis_x, aparcamientos_no_info$gis_y),
+                              "No", "Sí"))
+
+plot_ly(
+  data = calles_ser,
+  type = 'scattermapbox',
+  mode = 'markers',
+  lat = ~latitud,
+  lon = ~longitud,
+  color = ~zona_informada,
+  colors = c("grey", "blue"),     
+  marker = list(size = 4),
+  text = ~paste("Calle:", calle, "<br>Número:", numero_finca)  
+) %>%
+  layout(
+    mapbox = list(
+      style = "carto-positron",
+      zoom = 11,    
+      center = list(lat = mean(calles_ser$latitud), lon = mean(calles_ser$longitud))
+    ),
+    legend = list(title = list(text = "Zona SER informada"))
+  )
+```
+
+### Tratamiento Espacial de los datos {#tratamiento-espacial-de-los-datos}
+
+Al tratarse de datos espaciotemporales se lleva a cabo un tratamiento espacial de éstos mediante geometrías. Para ello se va a convertir los dataframes presentados en dataframes espacialess mediante la librería `sf`.
+De esta manera, cada fila tiene un punto en el mapa basado en su longitud y latitud, crs = 4326 indica que las coordenadas están en grados.
+
+```{r}
+# Los conjuntos de datos se convierten a dataframe espaciales a partir de las columnas de longitud y latitud, esto crea una columna llamada geometry en cada uno de los dataframes
+geo_trafico <- st_as_sf(trafico_df, coords = c("longitud", "latitud"), crs = 4326)
+geo_aparcamientos_info <- st_as_sf(aparcamientos_info, coords = c("longitud", "latitud"), crs = 4326)
+```
+
+Se transforman las coordenadas de grados a metros, lo cual permite medir distancias reales y hacer uniones espaciales correctamente.
+
+```{r}
+geo_trafico <- st_transform(geo_trafico, 25830)
+geo_aparcamientos_info <- st_transform(geo_aparcamientos_info, 25830)
+```
+
+```{r}
+# Se renonmbran las columnas de geometrías para poder identificarlas
+geo_trafico <- geo_trafico %>%
+  rename(geometria_trafico = geometry)
+
+geo_aparcamientos_info <- geo_aparcamientos_info %>%
+  rename(geometria_aparcamiento = geometry)
+```
+
+Se implementa un función para asignar a cada zona de aparcamiento un valor de tráfico por cercanía. Ésto se hace en función del intervalo de tiempo y del tipo de día correspondiente.
+
+```{r}
+asignar_trafico_cercano <- function(aparcamientos_sub, trafico_sub) {
+  # Ambos subconjuntos que se pasan como parámetros a la función deben ser dataframes espaciales
+  
+  # Encontrar índice del vecino más cercano
+  id_cercanos <- st_nearest_feature(aparcamientos_sub, trafico_sub)
+  
+  # Combinar columnas de tráfico al aparcamiento a partir del índice calculado anteriormente
+  aparcamientos_sub %>%
+    bind_cols(trafico_sub[id_cercanos, c("media_intensidad", "media_carga", "media_ocupacion")])
+}
+```
+
+Se enriquece `geo_aparcamiento_info` con datos de tráfico.
+
+```{r, message=FALSE}
+df_aparcamiento_info_trafico <- geo_aparcamientos_info %>%
+  # Se agrupan los aparcamientos por día de la semana e intervalo de tiempo
+  group_by(fin_de_semana, int_tiempo) %>%  
+  # Se aplica la función asignar_trafico_cercano() a cada subgrupo por separado
+  group_modify(~ {
+    # Se cogen los datos de cada subconjunto de aparcamientos, de fin_de_semana y de int_tiempo 
+    aparcamientos_sub <- .x
+    fin_sem <- .y$fin_de_semana
+    tiempo <- .y$int_tiempo
+    
+    # Se filtra el dataframe de tráfico en función del valor de fin_de_semana y de int_tiempo
+    trafico_sub <- geo_trafico %>%
+      filter(fin_de_semana == fin_sem, int_tiempo == tiempo)
+    
+    # Se aplica la función para asignar el tráfico
+    asignar_trafico_cercano(aparcamientos_sub, trafico_sub)
+  }) %>%
+  ungroup()
+```
+
+```{r}
+# Se muestra el resultados
+glimpse(df_aparcamiento_info_trafico)
+```
+
+```{r}
+# Se eliminan variables que no se van a usar más
+df_aparcamiento_info_trafico <- df_aparcamiento_info_trafico %>%
+  select(-geometria_trafico)
+```
+
+```{r}
+# Se comprueba que no se hayan introducidos duplicados
+duplicados <- df_aparcamiento_info_trafico[duplicated(df_aparcamiento_info_trafico) | duplicated(df_aparcamiento_info_trafico, fromLast = TRUE), ]
+
+duplicados
+```
+
+Se obtienen las zonas SER de las cuales no tienen un parquímetro asociado. Para ello se utiliza un `anti_join` que permite mantener las filas de un dataframe que no están en otro.
+
+```{r}
+aparcamientos_no_info <- calles_ser %>%
+  anti_join(
+    aparcamientos_info %>% select(gis_x, gis_y),
+    by = c("gis_x", "gis_y")
+  )
+```
+
+```{r}
+dim(aparcamientos_no_info)
+```
+
+De las 33730 zonas SER que hay en total, de 31006 no se tiene información acerca de datos de parquímetros.
+
+```{r}
+# Se hace el producto cartesiano de cada zona SER por cada uno de los valores de int_tiempo y fin_de_semana para tener la misma granularidad que en df_aparcamientos_info
+fin_de_semana_valores <- unique(aparcamientos_info$fin_de_semana)
+
+int_tiempo_valores <- unique(aparcamientos_info$int_tiempo)
+
+dias_horas_df <- expand.grid(fin_de_semana = fin_de_semana_valores,
+                             int_tiempo = int_tiempo_valores)
+
+aparcamientos_no_info_expandido <- aparcamientos_no_info %>%
+  crossing(dias_horas_df)
+```
+
+Se transforman estos datos a un dataframe espacial.
+
+```{r}
+geo_aparcamientos_no_info <- st_as_sf(aparcamientos_no_info_expandido,coords = c("longitud", "latitud"), crs = 4326)
+
+# Se transforma el sistema de coordenadas de grados a metros para poder asignar el tráfico por cercanía
+geo_aparcamientos_no_info <- st_transform(geo_aparcamientos_no_info, 25830)
+
+geo_aparcamientos_no_info <- geo_aparcamientos_no_info %>%
+  rename(geometria_aparcamiento = geometry)
+```
+
+Se enriquece `geo_aparcamiento_no_info` con datos de tráfico.
+
+```{r, message=FALSE}
+df_aparcamiento_no_info_trafico <- geo_aparcamientos_no_info %>%
+  # Se agrupan los aparcamientos por día de la semana e intervalo de tiempo
+  group_by(fin_de_semana, int_tiempo) %>%  
+  # Se aplica la función asignar_trafico_cercano() a cada subgrupo por separado
+  group_modify(~ {
+    # Se cogen los datos de cada subconjunto de aparcamientos, de fin_de_semana y de int_tiempo 
+    aparcamientos_sub <- .x
+    fin_sem <- .y$fin_de_semana
+    tiempo <- .y$int_tiempo
+    
+    # Se filtra el dataframe de tráfico en función del valor de fin_de_semana y de int_tiempo
+    trafico_sub <- geo_trafico %>%
+      filter(fin_de_semana == fin_sem, int_tiempo == tiempo)
+    
+    # Se aplica la función para asignar el tráfico
+    asignar_trafico_cercano(aparcamientos_sub, trafico_sub)
+  }) %>%
+  ungroup()
+```
+
+```{r}
+# Se muestra el resultado
+glimpse(df_aparcamiento_no_info_trafico)
+```
+
+```{r}
+# Se eliminan la columna de geometría de tráfico para evitar confusiones
+df_aparcamiento_no_info_trafico <- df_aparcamiento_no_info_trafico %>%
+  select(-geometria_trafico)
+```
+
+```{r}
+# Se comprueba que no se hayan introducido duplicados
+duplicados <- df_aparcamiento_no_info_trafico[duplicated(df_aparcamiento_no_info_trafico) | duplicated(df_aparcamiento_no_info_trafico, fromLast = TRUE), ]
+
+duplicados
+```
+
+```{r}
+# Se eliminan columnas que ya no se utilizan
+df_aparcamiento_info <- df_aparcamiento_info_trafico %>%
+  select(-gis_x,-gis_y)
+df_aparcamiento_no_info <- df_aparcamiento_no_info_trafico %>%
+  select(-gis_x,-gis_y)
+```
+
+### Feature Engineering {#feature-engineering}
+
+En primer lugar se codifican las variables categóricas `bateria_linea`, `color` y `int_tiempo`.
+
+```{r}
+# Se codifica la variable bateria_linea con 0 para el nivel Batería y 1 para el nivel Línea
+df_aparcamiento_info$bateria_linea <- recode(df_aparcamiento_info$bateria_linea, "Batería" = 0, "Línea" = 1)
+df_aparcamiento_no_info$bateria_linea <- recode(df_aparcamiento_no_info$bateria_linea, "Batería" = 0, "Línea" = 1)
+
+# Se codifica la variable color con 0 para el nivel Verde, 1 para Azul, 2 para Naranja, 3 para Rojo y 4 para Alta Rotación
+df_aparcamiento_info$color <- recode(df_aparcamiento_info$color, "Verde" = 0, "Azul" = 1, "Naranja" = 2, "Rojo" = 3, "Alta Rotación" = 4)
+df_aparcamiento_no_info$color <- recode(df_aparcamiento_no_info$color, "Verde" = 0, "Azul" = 1, "Naranja" = 2, "Rojo" = 3, "Alta Rotación" = 4)
+
+# Se codifica la variable int_tiempo con 0 para el nivel Mañana, 1 para Mediodia, 2 para Tarde y 3 para Noche
+df_aparcamiento_info$int_tiempo <- recode(df_aparcamiento_info$int_tiempo, "Mañana" = 0, "Mediodia" = 1, "Tarde" = 2, "Noche" = 3)
+df_aparcamiento_no_info$int_tiempo <- recode(df_aparcamiento_no_info$int_tiempo, "Mañana" = 0, "Mediodia" = 1, "Tarde" = 2, "Noche" = 3)
+```
+
+A continuación se crean nuevas variables a partir de las ya existentes.
+Primero se considera la ratio de la medida de tráfico `media_intensidad` entre el número de plazas de cada zona SER.
+Esta variable llamada `ratio_intensidad_por_nplazas` aporta gran valor puesto que informa de la saturación de la zona SER, a mayor intensidad y menor número de plazas esa zona será menos favorable para encontrar aparcamiento que una con la misma intensidad y mayor número de plazas.
+Por lo tanto, cuanto mayor sea dicha ratio menor será la facilidad de encontrar aparcamiento en la correspondiente zona de aparcamiento.
+También se crea la variable `congestion` a partir de la variable `media_carga`, ésta indica el grado de congestión usual de la zona de manera categórica mediante 4 niveles: Baja, Media, Alta y Muy Alta.
+
+```{r}
+# Se añade la variable ratio_intensidad_por_nplazas y congestion a los dos dataframes
+df_aparcamiento_info <- df_aparcamiento_info %>%
+  mutate(
+    ratio_intensidad_por_nplazas = media_intensidad / numero_plazas,
+    congestion = case_when(
+    media_carga < 25 ~ "Baja",
+    media_carga >= 25 & media_carga < 50 ~ "Media",
+    media_carga >= 50 & media_carga < 75 ~ "Alta",
+    media_carga >= 75 ~ "Muy Alta"
+  )
+  )
+
+df_aparcamiento_no_info <- df_aparcamiento_no_info %>%
+  mutate(
+    ratio_intensidad_por_nplazas = media_intensidad / numero_plazas,
+    congestion = case_when(
+    media_carga < 25 ~ "Baja",
+    media_carga >= 25 & media_carga < 50 ~ "Media",
+    media_carga >= 50 & media_carga < 75 ~ "Alta",
+    media_carga >= 75 ~ "Muy Alta"
+  )
+  )
+
+```
+
+Se muestra la distribución de la variable `congestion` en ambos casos.
+
+```{r}
+ggplot(df_aparcamiento_info, aes(x = congestion)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Distribución de la variable congestion para datos informados",
+       x = "Congestión",
+       y = "Frecuencia") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(df_aparcamiento_no_info, aes(x = congestion)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Distribución de la variable congestion para datos no informados",
+       x = "Congestión",
+       y = "Frecuencia") +
+  theme_minimal()
+```
+
+Se aprecia que la distribución de la variable `congestion` es muy similar para ambos dataframes, siendo Baja el nivel más frecuente, seguido de Media, Alta y Muy Alta.
+Se codifica dicha variable.
+
+```{r}
+df_aparcamiento_info <- df_aparcamiento_info %>%
+  mutate(congestion = recode(congestion,
+                                 "Baja" = 0,
+                                 "Media" = 1,
+                                 "Alta" = 2,
+                                 "Muy Alta" = 3))
+
+df_aparcamiento_no_info <- df_aparcamiento_no_info %>%
+  mutate(congestion = recode(congestion,
+                                 "Baja" = 0,
+                                 "Media" = 1,
+                                 "Alta" = 2,
+                                 "Muy Alta" = 3))
+
+```
+
+Se crean variables temporales cíclicas las cuales permite mostrar la relación real de los niveles de la variable `int_tiempo`, para representar el ciclo.
+Así el modelo entiende que noche y mañana están cerca, y no considera una relación lineal entre los 4 niveles de la variable.
+
+```{r}
+# Aquí es esencial que la variable int_tiempo esté codificada
+df_aparcamiento_info <- df_aparcamiento_info %>%
+  mutate(
+    tiempo_sin = sin(2 * pi * int_tiempo / 4),
+    tiempo_cos = cos(2 * pi * int_tiempo / 4)
+  )
+
+df_aparcamiento_no_info <- df_aparcamiento_no_info %>%
+  mutate(
+    tiempo_sin = sin(2 * pi * int_tiempo / 4),
+    tiempo_cos = cos(2 * pi * int_tiempo / 4)
+  )
+```
+
+También se consideran variables espaciales esféricas.
+Éstas son especialmente importantes para describir la relación entre las coordenadas, puesto que no es lineal, así que la solución es proyectar la longitud y la latitud en la esfera.
+Esto hace que el modelo entienda mejor proximidades espaciales reales, se reduce la distorsión de las distancias entre puntos.
+
+```{r}
+# En primer lugar se vuelven a definir los dataframes como dataframes espaciales aunque cambiamos ahora las coordenadas en metros en coordenadas en grados
+df_aparcamiento_info <- st_as_sf(df_aparcamiento_info, crs = 25830)
+df_aparcamiento_info <- st_transform(df_aparcamiento_info, 4326)
+
+df_aparcamiento_no_info <- st_as_sf(df_aparcamiento_no_info, crs = 25830)
+df_aparcamiento_no_info <- st_transform(df_aparcamiento_no_info, 4326)
+```
+
+```{r}
+df_aparcamiento_info <- df_aparcamiento_info %>%
+  mutate(
+    lat = st_coordinates(geometria_aparcamiento)[,2],
+    lon = st_coordinates(geometria_aparcamiento)[,1],
+    # Se transforman longitud y latitud a radianes
+    lat_rad = lat * pi / 180,
+    lon_rad = lon * pi / 180,
+    # Se calculan las coordenadas esféricas
+    x = cos(lat_rad) * cos(lon_rad),
+    y = cos(lat_rad) * sin(lon_rad),
+    z = sin(lat_rad)
+  )
+
+df_aparcamiento_no_info <- df_aparcamiento_no_info %>%
+  mutate(
+    lat = st_coordinates(geometria_aparcamiento)[,2],
+    lon = st_coordinates(geometria_aparcamiento)[,1],
+    lat_rad = lat * pi / 180,
+    lon_rad = lon * pi / 180,
+    x = cos(lat_rad) * cos(lon_rad),
+    y = cos(lat_rad) * sin(lon_rad),
+    z = sin(lat_rad)
+  )
+```
+
+Se muestran las distribuciones de algunas variables creadas y otras ya existentes, se les aplica escala logarítmica para que que su distribución pierda la asimetría en la medida de lo posible.
+Se comienza por las variables transformadas del dataframe `df_aparcamiento_info`:
+
+```{r}
+df_aparcamiento_info <- df_aparcamiento_info %>%
+  mutate(
+    log_numero_tiques = log(numero_tiques + 1),
+    log_ratio_intensidad_por_nplazas = log(ratio_intensidad_por_nplazas + 1),
+    log_media_ocupacion = log(media_ocupacion + 1)
+  )
+```
+
+```{r}
+# Se muestra la distribución de la variable original frente a la distribución con transformación logarítmica
+grid.arrange(ggplot(df_aparcamiento_info, aes(x = ratio_intensidad_por_nplazas)) +
+                geom_histogram(bins = 30, fill = "green") +
+                ylab("Frecuencia") +
+                theme_minimal(),
+              ggplot(df_aparcamiento_info, aes(x = log_ratio_intensidad_por_nplazas)) +
+                geom_histogram(bins = 30, fill = "green") +
+                ylab("Frecuencia") +
+                theme_minimal(),
+             ncol = 2)
+```
+
+```{r}
+grid.arrange(ggplot(df_aparcamiento_info, aes(x = media_ocupacion)) +
+                geom_histogram(bins = 30, fill = "salmon") +
+                ylab("Frecuencia") +
+                theme_minimal(),
+              ggplot(df_aparcamiento_info, aes(x = log_media_ocupacion)) +
+                geom_histogram(bins = 30, fill = "salmon") +
+                ylab("Frecuencia") +
+                theme_minimal(),
+             ncol = 2)
+```
+
+```{r}
+grid.arrange(ggplot(df_aparcamiento_info, aes(x = numero_tiques)) +
+                geom_histogram(bins = 30, fill = "lightblue") +
+                ylab("Frecuencia") +
+                theme_minimal(),
+              ggplot(df_aparcamiento_info, aes(x = log_numero_tiques)) +
+                geom_histogram(bins = 30, fill = "lightblue") +
+                ylab("Frecuencia") +
+                theme_minimal(),
+             ncol = 2)
+```
+
+Se puede observar como se normalizan las distribuciones.
+Se procede ahora con las transformaciones de `df_aparcamiento_no_info`:
+
+```{r}
+df_aparcamiento_no_info <- df_aparcamiento_no_info %>%
+  mutate(
+    log_ratio_intensidad_por_nplazas = log(ratio_intensidad_por_nplazas + 1),
+    log_media_ocupacion = log(media_ocupacion + 1)
+  )
+```
+
+Se vuelve a mostrar las distribuciones de las variables con transformaciones logarítmicas para apreciar su nueva distribución.
+
+```{r}
+grid.arrange(ggplot(df_aparcamiento_no_info, aes(x = ratio_intensidad_por_nplazas)) +
+                geom_histogram(bins = 30, fill = "green") +
+                ylab("Frecuencia") +
+                theme_minimal(),
+              ggplot(df_aparcamiento_no_info, aes(x = log_ratio_intensidad_por_nplazas)) +
+                geom_histogram(bins = 30, fill = "green") +
+                ylab("Frecuencia") +
+                theme_minimal(),
+             ncol = 2)
+```
+
+```{r}
+grid.arrange(ggplot(df_aparcamiento_no_info, aes(x = media_ocupacion)) +
+                geom_histogram(bins = 30, fill = "salmon") +
+                ylab("Frecuencia") +
+                theme_minimal(),
+              ggplot(df_aparcamiento_no_info, aes(x = log_media_ocupacion)) +
+                geom_histogram(bins = 30, fill = "salmon") +
+                ylab("Frecuencia") +
+                theme_minimal(),
+             ncol = 2)
+```
+
+### Algoritmos de regresión {#algoritmos-de-regresion}
+
+#### Modelado de la variable `log_numero_tiques`
+
+En este apartado se usa un subconjunto de `df_aparcamiento_info` como dataframe de entrenamiento para los distintos algoritmos de regresión. Luego, a partir de éstos se predice el número de tiques para cada registro de `df_aparcamiento_no_info`. 
+
+```{r}
+# Se define la variable objetivo
+variable_objetivo <- "log_numero_tiques"
+```
+
+```{r}
+# Se fija una semilla para que todo el proceso sea reproducible
+set.seed(7)
+```
+
+```{r}
+# Se define la función para el cálculo del coeficiente de determinación
+r2 <- function(y, y_prediccion) {
+  1 - sum((y - y_prediccion)^2) / sum((y - mean(y))^2)
+}
+```
+
+En primer lugar se entrena un algoritmo de regresión lineal sencillo el cual permite conocer la relación entre las variables predictoras y la variable objetivo.
+
+```{r}
+# Se considera el dataframe con las variables de interés para el entrenamiento del modelo
+df_regresion <- 
+  df_aparcamiento_info %>%
+  st_drop_geometry() %>%
+  select(fin_de_semana, log_numero_tiques, numero_plazas,
+         log_ratio_intensidad_por_nplazas, 
+         log_media_ocupacion, tiempo_sin, tiempo_cos, x,y,z)
+
+# Se extraen las variables predictoras
+variables_predictoras <- setdiff(names(df_regresion), variable_objetivo)
+
+print(variables_predictoras)
+
+# Para regresión lineal se normalizan las variables
+variables_a_escalar <- c("log_numero_tiques", "numero_plazas", 
+                     "log_ratio_intensidad_por_nplazas", "log_media_ocupacion","x","y","z")
+
+df_escalado <- df_regresion %>%
+  # Se escalan las variables numéricas 
+  mutate(across(all_of(variables_a_escalar),~ scale(.x))) %>%
+  # Se convierten a factor las variables categóricas
+   mutate(across(c(fin_de_semana), as.factor))
+
+# Se divide el df escalado en entrenamiento y test, con 70%/30%
+indices_entrenamiento <- createDataPartition(df_escalado$log_numero_tiques, p = 0.7, list = FALSE)
+entrenamiento <- df_escalado[indices_entrenamiento, ]
+test <- df_escalado[-indices_entrenamiento, ]
+
+# Fórmula para el modelo lineal
+formula <- as.formula(paste("log_numero_tiques ~", paste(variables_predictoras, collapse = "+")))
+
+# Se entrena el modelo lineal
+modelo_lineal <- lm(formula, data = entrenamiento)
+summary(modelo_lineal)
+
+# Predicciones sobre el conjunto de test
+predicciones <- predict(modelo_lineal, test)
+valor_real <- test$log_numero_tiques
+
+# Se incluye el error absoluto medio
+mae <- mae(valor_real, predicciones)
+
+print(list(MAE = mae))
+
+# Se calculan los residuos
+residuos <- test$log_numero_tiques - predicciones
+
+# Se pintan los valores predichos por el modelo de regresión lineal junto con los residuos para conocer su distribución
+plot(predicciones, residuos,
+     xlab = "Valores predichos",
+     ylab = "Residuos",
+     main = "Residuos vs Valores predichos")
+abline(h = 0, col = "red")
+
+# Histograma de los residuos
+hist(residuos, breaks = 30, main = "Histograma de los residuos", col = "gray")
+qqnorm(residuos); qqline(residuos, col = "red")
+
+# Se utiliza un test de contrastes para averiguar si el modelo presenta homocedasticidad 
+bptest(modelo_lineal)
+```
+
+Se observa que todas las variables excepto `numero_plazas` son altamente significativas en el modelo, al 99%.
+Ésto indica que el número de tiques sacados en un parquímetro no depende del número de plazas de dicha zona de estacionamiento.
+Por otro lado, se observa que la variable `fin_de_semana` tiene coeficiente negativo lo cual nos indica que en fin de semana los el número de tiques registrados decrece, de hecho este comportamiento ya se observaba en el gráfico en el que se estudia la variable `numero_tiques` para cada nivel de la variable `fin_de_semana`, en éste se observa que el número de tiques en fin de semana es mucho menor que entre semana.
+También, se ve que las variables más destacas en el modelo son las variables temporales y las variables espaciales.
+Por otro lado, el test descarta la hipótesis de varianza constante de los residuos, esto se intuye del gráfico de los residuos frente a las predicciones debido a los distintos patrones de rayas diagonales y densidades que se observan, los cuales sugieren que podrían existir relaciones no lineales no capturadas por el modelo.
+Debido a esto se prueba con modelos más complejos.
+Igualmente el modelo explica alrededor de un 70% de los datos y los valores del error cuadrático medio y el error absoluto medio son reducidos.
+
+Se define ahora el dataframe y los conjuntos de entrenamiento y test que se usan para entrenar modelos más complejos.
+Éstos conjuntos de datos no se escalan puesto que los algoritmos XGBoost y Random Forest no son sensibles a outliers.
+Ésto se puede revisar en la documentación de las funciones que implementan los algoritmos la cual se incluye en [Referencias](#referencias).
+
+```{r}
+df_regresion <- 
+  df_aparcamiento_info %>%
+  st_drop_geometry() %>%
+  select(fin_de_semana, log_numero_tiques, numero_plazas,
+         log_ratio_intensidad_por_nplazas, 
+         log_media_ocupacion, tiempo_sin, tiempo_cos, x,y,z, color, 
+         congestion, bateria_linea) %>%
+    mutate(across(everything(), as.numeric))
+
+variables_predictoras <- setdiff(names(df_regresion), variable_objetivo)
+
+print(variables_predictoras)
+
+# Se divide el df escalado en entrenamiento y test, con 70%/30%
+# En el algoritmo XGBoost no es necesario escalar o normalizar las variables
+indices_entrenamiento <- createDataPartition(df_regresion$log_numero_tiques, p = 0.7, list = FALSE)
+entrenamiento <- df_regresion[indices_entrenamiento, ]
+test <- df_regresion[-indices_entrenamiento, ]
+
+# Mostrar dimensiones
+dim(entrenamiento)
+dim(test)
+```
+
+Se comienza por entrenar el **modelo XGBoost**.
+Se definen los conjuntos de entrenamiento y test como matrices densas.
+
+```{r}
+# Para el algoritmo XGBoost los dataframes de entrenamiento y test hay que pasarlos en forma de matriz densa, para eso se utiliza la función DMatrix de la librería xgboost
+# Para las matrices todos los datos deben ser numéricos, por eso se transforman antes todas las columnas a tipo numérico
+m_entrenamiento <- xgb.DMatrix(data = as.matrix(entrenamiento[, variables_predictoras]),
+                      label = entrenamiento[[variable_objetivo]])
+
+m_test <- xgb.DMatrix(data = as.matrix(test[, variables_predictoras]),
+                     label = test[[variable_objetivo]])
+```
+
+A continuación se indica el código utilizado para la elección de los parámetros óptimos para el algoritmo XGBoost, el código aparece comentado porque conlleva un tiempo de ejecución de unos 20 minutos.
+
+```{r}
+# grid_parametros <- expand.grid(
+#   eta              = c(0.01, 0.03),
+#   max_depth        = c(3, 4),
+#   min_child_weight = c(10, 20),
+#   gamma            = c(2, 4),
+#   subsample        = c(0.7, 1),
+#   colsample_bytree = c(0.7, 1),
+#   lambda           = c(1, 5),
+#   alpha            = 1
+# )
+# 
+# # Se prueban 128 combinaciones distintas de parámetros
+# nrow(grid_parametros)
+# 
+# mejor_rmse <- Inf
+# mejores_parametros <- NULL
+# mejores_rondas <- NULL
+# 
+# for (i in 1:nrow(grid_parametros)) {
+#   parametros <- as.list(grid_parametros[i, ]) # Se cogen las distintas filas del grid de parámetros
+#   parametros$objective   <- "reg:squarederror" # Se le añade la métrica objetivo
+#   parametros$eval_metric <- "rmse" # Se le añade la métrica de evaluación
+#   
+#   # Se eligen los parámetros óptimos usando validación cruzada de 5 folds, considerando early stopping para evitar sobreentrenamiento 
+#   cv <- xgb.cv(
+#     params = parametros,
+#     data = m_entrenamiento,
+#     nrounds = 5000,
+#     nfold = 5,
+#     early_stopping_rounds = 50,
+#     verbose = FALSE
+#   )
+#   
+#   rmse <- min(cv$evaluation_log$test_rmse_mean)
+#   
+#   if (rmse < mejor_rmse) {
+#     mejor_rmse <- rmse
+#     mejores_parametros <- params
+#     mejores_rondas <- cv$best_iteration
+#   }
+# }
+# 
+# cat("Mejores parámetros encontrados:\n")
+# print(mejores_parametros)
+# cat("Mejor número de rondas:", mejores_rondas, "\n")
+# cat("Mejor RMSE:", mejor_rmse, "\n")
+# 
+# ## -- Salida -- 
+# # Mejores parámetros encontrados:
+# # $objective
+# # [1] "reg:squarederror"
+# # 
+# # $eval_metric
+# # [1] "rmse"
+# # 
+# # $eta
+# # [1] 0.01
+# # 
+# # $max_depth
+# # [1] 3
+# # 
+# # $min_child_weight
+# # [1] 10
+# # 
+# # $gamma
+# # [1] 2
+# # 
+# # $subsample
+# # [1] 0.7
+# # 
+# # $colsample_bytree
+# # [1] 0.7
+# # 
+# # $lambda
+# # [1] 1
+# # 
+# # $alpha
+# # [1] 1
+# # 
+# # Mejor número de rondas: 5000 
+# # Mejor RMSE: 0.6152665 
+
+```
+
+```{r}
+# Se definen los parámetros obtenidos mediante procesos de refinamiento de parámetros para mejorar el modelo y evitar el sobreentrenamiento
+parametros_xgb <- list(
+  objective        = "reg:squarederror",
+  eta              = 0.01,
+  max_depth        = 3,     
+  min_child_weight = 10,
+  gamma            = 2,
+  subsample        = 0.7,
+  colsample_bytree = 0.7,
+  lambda           = 1,
+  alpha            = 1,
+  eval_metric      = "rmse" 
+)
+
+n_rondas <- 5000
+
+# Se entrena el modelo con los parámetros y el número de rondas que mejor ha funcionado
+modelo_xgb <- xgb.train(
+  params = parametros_xgb,
+  data = m_entrenamiento,
+  nrounds = n_rondas,
+  watchlist = list(train = m_entrenamiento),
+  verbose = 0
+)
+```
+
+```{r}
+pred_entrenamiento_xgb <- predict(modelo_xgb, m_entrenamiento) # Predicciones sobre datos de entrenamiento
+pred_test_xgb  <- predict(modelo_xgb, m_test) # Predicciones sobre datos de test
+
+# Se muestran a continuación las métricas tanto para las predicciones sobre los datos de entrenamiento como sobre los datos de test para ver como de bien funciona el modelo
+medidas_xgb <- data.frame(
+  variable_objetivo     = "log_numero_tiques",
+  rmse_entrenamiento = rmse(entrenamiento[[variable_objetivo]],pred_entrenamiento_xgb),
+  rmse_test  = rmse(test[[variable_objetivo]], pred_test_xgb),
+  mae_entrenamiento  = mae(entrenamiento[[variable_objetivo]],pred_entrenamiento_xgb),
+  mae_test   = mae(test[[variable_objetivo]], pred_test_xgb),
+  r2_entrenamiento   = r2(entrenamiento[[variable_objetivo]],pred_entrenamiento_xgb),
+  r2_test    = r2(test[[variable_objetivo]], pred_test_xgb)
+)
+
+print(medidas_xgb)
+```
+
+Se observa que los valores de las métricas obtenidas para el modelo son muy buenas.
+
+```{r}
+# Se observan los valores reales frente a los valores predichos para ver como de bien va el modelo
+plot(test$log_numero_tiques, pred_test_xgb,
+     xlab = "Valores reales", ylab = "Predicciones")
+abline(0, 1, col = "red")  # línea ideal
+```
+
+Se observa que aunque hay cierta dispersión, parece que las predicciones siguen la diagonal por lo que el modelo predice adecuadamente los datos.
+
+```{r}
+residuos_xgb <- test[[variable_objetivo]] - pred_test_xgb
+
+# Se muestra en un gráfico los valores predichos frente a los residuos
+plot(pred_test_xgb, residuos_xgb,
+     xlab = "Valores predichos",
+     ylab = "Residuos",
+     main = "Residuos vs Valores predichos")
+abline(h = 0, col = "red")
+```
+
+Se pueden observar ciertos patrones en el gráfico de arriba como diagonales o cúmulos de puntos, debido a esto se lleva a cabo un test de homocedasticidad para comprobar que se pueda descartar que los residuos no tengan varianza constante y que los datos predichos y los datos reales siguien un modelo lineal.
+
+```{r}
+# Se muestra un histograma de los residuos junto con un qqplot para confirmar que éstos siguen una distribución normal
+hist(residuos_xgb, breaks = 30, main = "Histograma de residuos", col = "gray")
+qqnorm(residuos_xgb); qqline(residuos_xgb, col = "red")
+```
+
+```{r}
+# Test para comprobar homocedasticidad
+modelo_lineal_residuos <- lm(test[[variable_objetivo]] ~ pred_test_xgb)
+bptest(modelo_lineal_residuos)
+```
+
+No existen evidencias para rechazar la hipótesis de homocedasticidad por lo que consideramos el modelo como válido.
+
+```{r}
+importancia_var <- xgb.importance(feature_names = variables_predictoras, model = modelo_xgb)
+xgb.plot.importance(importancia_var)
+```
+
+Se observa en este gráfico que las variables temporales, seguidas de la ocupación media y de las variables espaciales son las que más influyen en el modelo a la hora de predecir el número de tiques.
+En general, el algoritmo entiende bien los datos de entrenamiento y generaliza de manera adecuada, no se observa sobreentrenamiento.
+Aunque el gráfico de dispersión de los residuos frente a los valores predichos muestre ciertos patrones, se comprueba con un test que se cumple la hipótesis de homocedasticidad.
+
+Se entrena ahora un **algoritmo de regresión Random Forest**.
+
+```{r, warning=FALSE}
+## Se utiliza la librería ranger que es una implementación más rápida de la librería Random Forest
+## Para este modelo se usa el mismo conjunto de entrenamiento y test creado para XGBoost
+
+# Control de validacion cruzada, con 5 folds de validación
+control_cv <- trainControl(
+  method = "repeatedcv",
+  number = 5
+)
+
+# Grid de parámetros
+parametros_rf <- expand.grid(
+  mtry = c(2, 4),             
+  splitrule = "variance",            
+  min.node.size = c(5, 10, 20))
+
+# Entrenamiento del modelo considerando validación cruzada
+modelo_rf <- train(
+  x = entrenamiento[, variables_predictoras],
+  y = entrenamiento[[variable_objetivo]],
+  method = "ranger",
+  trControl = control_cv,
+  tuneGrid = parametros_rf,
+  importance = "impurity",
+  metric = "RMSE",
+  num.trees = 500 
+)
+
+print(modelo_rf)
+```
+
+```{r}
+# Predicciones
+pred_entrenamiento_rf <- predict(modelo_rf, entrenamiento)
+pred_test_rf  <- predict(modelo_rf, test)
+
+# Métricas
+r2_entrenamiento   <- 1 - sum((entrenamiento[[variable_objetivo]] - pred_entrenamiento_rf)^2) /
+                  sum((entrenamiento[[variable_objetivo]] - mean(entrenamiento[[variable_objetivo]]))^2)
+r2_test    <- 1 - sum((test[[variable_objetivo]] - pred_test_rf)^2) /
+                  sum((test[[variable_objetivo]] - mean(test[[variable_objetivo]]))^2)
+
+medidas_rf <- data.frame(
+  rmse_entrenamiento = rmse(entrenamiento[[variable_objetivo]], pred_entrenamiento_rf),
+  rmse_test = rmse(test[[variable_objetivo]], pred_test_rf),
+  mae_entrenamiento  = mae(entrenamiento[[variable_objetivo]], pred_entrenamiento_rf),
+  mae_test   = mae(test[[variable_objetivo]], pred_test_rf),
+  r2_entrenamiento   = r2_entrenamiento,
+  r2_test = r2_test
+)
+
+print(medidas_rf)
+```
+
+Se puede observar que aunque el modelo entiende bien los datos de entrenamiento, al generalizar a datos que no conoce los resultados no son los más óptimos.
+Se observa un claro *overfitting*.
+Se procede a un estudio de los residuos.
+
+```{r}
+residuos_rf  <- test[[variable_objetivo]] - pred_test_rf
+
+# Histograma de residuos
+hist(residuos_rf, main = "Histograma de los residuos", xlab = "Residuos")
+
+# QQ-plot
+qqnorm(residuos_rf, main = "QQ-plot residuos")
+qqline(residuos_rf, col = "red")
+
+# Diagrama de dispersión de residuos frente a predicciones
+plot(pred_test_rf, residuos_rf,
+     main = "Residuos vs Predicciones",
+     xlab = "Predicciones", ylab = "Residuos")
+abline(h = 0, col = "red")
+
+```
+
+Se observa de nuevo cierto patrón en los residuos frente a las predicciones.
+Abajo se observa los valores reales frente a las predicciones de test, se observa que se mantiene la linealidad aunque haya cierta dispersión de los datos.
+
+```{r}
+plot(test[[variable_objetivo]], pred_test_rf,
+     main = "Valores reales vs Predicciones",
+     xlab = "Predicciones", ylab = "Residuos")
+abline(0,1,  col = "red")
+```
+
+```{r}
+# Test para comprobar homocedasticidad
+modelo_lineal_residuos <- lm(test[[variable_objetivo]] ~ pred_test_rf)
+bptest(modelo_lineal_residuos)
+```
+
+En este caso se rechaza la hipótesis nula de homocedasticidad.
+Se puede observar que este modelo generaliza mucho peor que XGBoost.
+
+```{r}
+# Se imprime importancia de variables
+print(varImp(modelo_rf))
+```
+
+Vemos que en este modelo las variables más importantes son las temporales, seguidas de las espaciales y destaca también la ratio de la intensidad media por número de plazas y la ocupacion media.
+
+Se añade una tabla comparativa para comparar los resultados obtenidos por los modelos XGBoost y Random Forest, dicha tabla se muestea
+
+```{r}
+# Convertir listas a data.frame
+tabla_comparacion <- tibble(
+  Modelo = c("XGBoost", "Random Forest"),
+  rmse_entrenamiento = c(medidas_xgb$rmse_entrenamiento, medidas_rf$rmse_entrenamiento),
+  rmse_test  = c(medidas_xgb$rmse_test, medidas_rf$rmse_test),
+  mae_entrenamiento  = c(medidas_xgb$mae_entrenamiento, medidas_rf$mae_entrenamiento),
+  mae_test   = c(medidas_xgb$mae_test, medidas_rf$mae_test),
+  r2_entrenamiento   = c(medidas_xgb$r2_entrenamiento, medidas_rf$r2_entrenamiento),
+  r2_test    = c(medidas_xgb$r2_test, medidas_rf$r2_test)
+)
+
+# Ver la tabla
+print(tabla_comparacion)
+
+# Se guarda la tabla para mostrarla en la memoria
+write.csv(tabla_comparacion, "tabla_comparacion.csv", row.names = FALSE)
+```
+
+Finalmente se aplica el algoritmo XGBoost para predecir los valores de `numero_tiques` en el dataframe `df_aparcamiento_no_info`:
+
+```{r}
+# Se considera un dataframe auxiliar con las variables predictoras para predecir el valor de la variable numero_tiques_log en los datos de aparcamiento no informados
+aux <- df_aparcamiento_no_info %>%
+      st_drop_geometry() %>%
+      select(all_of(variables_predictoras)) %>%
+      mutate(across(everything(), as.numeric))
+
+# Se convierte a matriz para poder aplicar xgboost
+aux_matrix <- as.matrix(aux)
+
+# Se predicen los valores de la variable con modelo_xgb
+predicciones <- predict(modelo_xgb, newdata = aux_matrix)
+
+# Se agregan las predicciones al dataframe de aparcamiento no informado
+df_aparcamiento_no_info$numero_tiques_log <- predicciones
+```
+
+```{r}
+# Se realiza la transformación logarítmica inversa de la variable para tener su valor real
+df_aparcamiento_no_info$numero_tiques <- expm1(predicciones)
+```
+
+```{r}
+df_aparcamiento_no_info$fin_de_semana <- as.factor(df_aparcamiento_no_info$fin_de_semana)
+```
+
+Se unen los datos de `df_aparcamiento_info` con los datos de `df_aparcamiento_no_info` en un único dataframe llamado `df_aparcamiento` para tener el conjunto de datos completo.
+
+```{r}
+df_aparcamiento <- bind_rows(df_aparcamiento_info, df_aparcamiento_no_info)
+
+df_aparcamiento <- df_aparcamiento %>%
+  mutate(rowid = row_number()) %>%
+  select(-num_barrio, -cod_barrio, -cod_distrito, -numero_tiques_log, -zona_informada, -log_numero_tiques)
+
+glimpse(df_aparcamiento)
+```
+
+### Algoritmo de *clustering* {#algoritmo-de-clustering}
+
+#### Segmentación de zonas SER por intervalo de tiempo y tipo de día
+
+En primer lugar, se hace un estudio de los outliers de los datos.
+No se considera antes este estudio puesto que los algoritmos XGBoost y Random Forest no son sensibles frente a outliers.
+
+```{r}
+# Eliminamos la geometría del conjunto de datos
+df_aparcamiento <- df_aparcamiento %>%
+  st_drop_geometry()
+
+# Función que devuelve un vector lógico, devuelve TRUE cuando x es un outlier
+# Esta función permite calcular el porcentaje de outliers en cada variable de los datos
+es_outlier <- function(x) {
+  q1 <- quantile(x, 0.25, na.rm = TRUE)
+  q3 <- quantile(x, 0.75, na.rm = TRUE)
+  iqr <- q3 - q1
+  ext_inferior <- q1 - 1.5 * iqr
+  ext_superior <- q3 + 1.5 * iqr
+  x < ext_inferior | x > ext_superior
+}
+
+var_numericas <- c('numero_plazas','log_ratio_intensidad_por_nplazas','log_media_ocupacion', 'numero_tiques')
+
+# Se comprueban el porcentaje de outliers de las variables numéricas
+porcentaje_outliers <- sapply(df_aparcamiento[, var_numericas], function(x) {
+  mean(es_outlier(x), na.rm = TRUE) * 100
+})
+
+print(porcentaje_outliers)
+```
+
+Se observa que `numero_plazas` es la variable con mayor porcentaje de outliers, se considera su transformación logarítmica.
+
+```{r}
+df_aparcamiento <- df_aparcamiento %>%
+  mutate(log_numero_plazas = log1p(numero_plazas))
+
+# Se calcula de nuevo el porcentaje de outliers ahora para la variable `log_numero_plazas`
+porcentaje_outlier <- sapply(df_aparcamiento[, "log_numero_plazas"], function(x) {
+  mean(es_outlier(x), na.rm = TRUE) * 100
+})
+
+porcentaje_outlier
+```
+
+Ahora los outliers de las variables oscilan entre 0.5% y 1.3% lo que se considera aceptable. 
+
+Se comienza el procedimiento de *clustering* por escalar los datos de manera robusta haciendo uso de la mediana y del rango intercuartílico. Se seleccionan las variables numéricas `log_numero_plazas`, `log_ratio_intensidad_por_nplazas`, `log_media_ocupacion` y `numero_tiques` para llevar a cabo la segmentación, se omiten ciertas variables categóricas como `congestion`, `color` o `bateria_linea` ya que sus distintos niveles presentan distribuciones muy dispares que pueden alterar de manera negativa la aplicación del algoritmo *k-means*.
+
+```{r, warning=FALSE}
+# Se seleccionan las variables de interés
+df_aparcamiento_cluster <- df_aparcamiento %>%
+  select(numero_tiques, log_numero_plazas,
+         log_ratio_intensidad_por_nplazas, log_media_ocupacion, int_tiempo, fin_de_semana)
+
+var_num_cluster <- c('log_numero_plazas','log_ratio_intensidad_por_nplazas','log_media_ocupacion', 'numero_tiques')
+
+# Se lleva a cabo escalado robusto
+df_aparcamiento_escalado <- df_aparcamiento_cluster %>%
+  mutate(across(var_num_cluster, ~(.-median(.))/IQR(.)))
+
+# Vemos correlación de las variables
+ggcorrplot::cor_pmat(df_aparcamiento_escalado[,var_num_cluster])
+```
+Se puede observar en la matriz de correlación que las variables numéricas no están correladas por lo que no es interesante aplicar técnicas de reducción de dimensionalidad como Análisis de Componentes Principales.
+
+Se definen ahora funciones que recogen los procedimientos que se van a llevar a cabo para cada subconjunto dado por las combinaciones de los valores de `int_tiempo` y `fin_de_semana`. Se comenta cada una de ellas:
+
+```{r}
+# Esta función recibe un vector de valores de k y un conjunto de datos y devuelve un gráfico con la inercia y otro con el silhouette score del resultado de aplicar del algorimto k-means entrenado sobre dicho conjunto de datos para cada valor de k
+estudio_valores_k <- function(valores_k, datos){
+  
+# Se definen los vectores para almacenar los valores de inercias y de silhouette scores 
+inercias <- numeric(length(valores_k))
+silhouettes_scores <- numeric(length(valores_k))
+
+for (i in seq_along(valores_k)) {
+    
+    k <- valores_k[i]
+    
+    # Se entrena el modelo k-means para el valor de k correspondiente
+    km <- kmeans(datos, centers = k, nstart = 20)
+    
+    # Se almacena la inercia para cada valor de k
+    inercias[i] <- km$tot.withinss
+    
+    # Para calcular el silhouette score se toma una muestra aleatoria del subconjunto de 5000 filas
+    indice_muestra <- sample(1:nrow(datos), min(5000, nrow(datos)))
+    muestra <- datos[indice_muestra, ]
+
+    num_cluster <- as.integer(factor(km$cluster[indice_muestra]))
+    
+    # Se calcula el valor de silhouette
+    sil <- silhouette(num_cluster, dist(muestra))
+    # Se almacena
+    silhouettes_scores[i] <- mean(sil[, 3])
+  }
+  
+  # Se muestra una gráfica con los valores obtenidos para las inercias y otra con los valores de silhouette
+  p1 <- ggplot(data.frame(k=valores_k, Inercia=inercias), aes(x=k, y=Inercia)) +
+    geom_line(color="darkorange") + geom_point(color="darkorange") +
+    ggtitle("Inercia por número de clusters") + xlab("Número de clusters (k)") + ylab("Inercia") +
+    theme_minimal()
+  
+  p2 <- ggplot(data.frame(k=valores_k, Silhouette=silhouettes_scores), aes(x=k, y=Silhouette)) +
+    geom_line(linetype="dashed", color="blue") + geom_point(shape=15, color="blue") +
+    ggtitle("Silhouette Score por número de clusters") + xlab("Número de clusters (k)") +
+    ylab("Silhouette Score") + theme_minimal()
+
+grid.arrange(p1, p2, ncol=2)
+
+} 
+```
+
+Esta función ayuda a seleccionar el número óptimo de *clusters*.
+
+```{r}
+# Esta función recibe datos los cuales deben tener una columna de cluster y devuelve una lista con:
+# Un dataframe con la proporción de registros para cada cluster 
+# Un dataframe que calcula la media de las variables numéricas consideradas y crea dos nuevas columnas, una columna numérica llamada facilidad_puntuacion y la otra categórica llamada facilidad_aparcamiento
+interpretacion_cluster <- function(datos){
+  
+var_num_cluster <- c('log_numero_plazas','log_ratio_intensidad_por_nplazas','log_media_ocupacion', 'numero_tiques')
+
+# Se muestra el porcenataje de registros por cluster
+porcentaje_por_cluster <- datos %>%
+  group_by(cluster) %>%
+  summarise( porcentaje = n()/nrow(datos)*100) %>%
+  arrange(cluster)
+
+# Se muestra también la media de cada variable numérica por cluster y apartir de ésta se calcula facilidad_aparcamiento
+df_facilidad_aparcamiento <- datos %>%
+  group_by(cluster) %>%
+  summarise(across(all_of(var_num_cluster), mean, na.rm = TRUE),
+            .groups = "drop") %>%
+  mutate(facilidad_puntuacion = log_numero_plazas - log_ratio_intensidad_por_nplazas - log_media_ocupacion - 0.5 * numero_tiques) %>%
+  arrange(desc(facilidad_puntuacion)) %>%
+  mutate(
+    facilidad_aparcamiento = case_when(
+      row_number() == 1 ~ "alta",
+      row_number() == n() ~ "baja",
+      TRUE ~ "media")
+  )
+
+  return(lista = list(df_facilidad_aparcamiento = df_facilidad_aparcamiento, porcentaje_por_cluster = porcentaje_por_cluster))
+
+}
+```
+
+Esta función permite interpretar los distintos *clusters* resultantes de aplicar el algoritmo *k-means*.
+
+```{r}
+# Esta función dado un conjunto de datos con una columna llamada facilidad_aparcamiento, muestra las distribuciones de las variables numéricas para cada nivel de facilidad_aparcamiento
+dist_variables_por_facilidad_aparcamiento <- function(datos){
+  
+  # Se convierten los datos a formato data.table
+  datos <- as.data.table(datos) 
+  
+  # Se convierte a data.table long 
+  subconjunto_aux_long <- melt(
+  datos, 
+  id.vars = "facilidad_aparcamiento", 
+  variable.name = "variable", 
+  value.name = "value"
+)
+
+# Se crea un gráfico de densidades tipo ridgeline
+ggplot(subconjunto_aux_long, aes(y = variable, x = value, fill = variable)) + 
+  geom_density_ridges(alpha = 0.6, scale = 0.9) + 
+  facet_wrap(~ facilidad_aparcamiento, scales = "free_x") + 
+  scale_fill_viridis_d(option = "C") + 
+  theme_ridges() + 
+  theme(
+    legend.position = "none",
+    panel.spacing = unit(0.1, "lines"),
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 14)
+  ) +
+  ylab("") +
+  xlab("Valores escalados") +
+  ggtitle("Distribución de las variables por facilidad de aparcamiento")
+}
+```
+
+Esta función permite interpretar cada nivel de la variable `facilidad_aparcamiento`, y puesto que ésta se deduce de los distintos *clusters*, por ende también facilita la interpretación de éstos.  
+
+```{r}
+# Se define un dataframe vacío que se irá completando con la información de cada subconjunto
+df_final <- data.frame()
+```
+
+**Segmentación de zonas de Servicio de Estacionamiento Regulado un día entre semana por la mañana**
+
+Este caso se comenta más en detalle. Para los demás únicamente se incluye el código y los resultados obtenidos. Al final de la sección se realiza una conclusión general.
+
+```{r, warning=FALSE}
+# Se filtra el dataframe escalado según el intervalo de tiempo y tipo de día
+subconjunto_aux <- df_aparcamiento_escalado %>%
+  filter(int_tiempo == 0, fin_de_semana == 0) %>%
+  select(-int_tiempo,-fin_de_semana) %>%
+  mutate(across(everything(),as.numeric))
+
+# Se filtran también el conjunto de datos completo y sin escalar que es el que posteriormente se almacenará con la información de clusters correspondiente
+subconjunto_datos_reales <- df_aparcamiento %>%
+  filter(int_tiempo == 0, fin_de_semana == 0)
+
+# Se estudian los valores de k=2, ..., k=7
+estudio_valores_k(2:7, subconjunto_aux)
+
+# Se muestra la estabilidad de los clusters
+clusterboot(subconjunto_aux, B = 100, bootmethod = "boot", clustermethod = kmeansCBI, krange = 3, seed = 7, count = FALSE,)
+
+# Finalmente se entrena el modelo k-means con el número de clusters seleccionado
+kmeans_final <- kmeans(subconjunto_aux, centers = 3, nstart = 20)
+
+subconjunto_aux$cluster <- kmeans_final$cluster
+subconjunto_datos_reales$cluster <- kmeans_final$cluster
+```
+
+En este caso se observa que aunque el silhouette score obtenido sea 0.3, lo que indica que los *clusters* no son muy compactos, sí que se tratan de *clusters* estables con un índice de Jaccard medio de 0.8.
+
+```{r, warning=FALSE}
+# Se interpretan ahora los clusters considerados
+lista <- interpretacion_cluster(subconjunto_aux)
+
+df_facilidad_aparcamiento <- lista$df_facilidad_aparcamiento
+
+# Se muestra la asignación de cada cluster a cada nivel de la variable facilidad_aparcamiento
+datatable(df_facilidad_aparcamiento, options = list(pageLength = 3, scrollX = TRUE, autoWidth = TRUE))
+
+# Se incluye una gráfica con el porcentaje de registros para cada cluster, esto también permite ver qué nivel o niveles de facilidad_aparcamiento son más frecuentes
+ggplot(lista$porcentaje_por_cluster, aes(x=porcentaje, y=factor(cluster))) +
+  geom_bar(stat="identity", fill="steelblue") +
+  geom_text(aes(label=sprintf("%.2f%%", porcentaje))) +
+  xlab("Porcentaje (%)") + ylab("Cluster") +
+  ggtitle("Distribución por cluster") +
+  theme_minimal()
+
+# Se almacena el valor de facilidad_aparcamiento para cada cluster
+etiqueta_cluster <- df_facilidad_aparcamiento %>%
+  select(cluster, facilidad_aparcamiento)
+
+# Se añade la etiqueta de facilidad de aparcamiento subconjunto_datos_reales y a subconjunto_aux
+subconjunto_datos_reales <- subconjunto_datos_reales %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+subconjunto_aux <- subconjunto_aux %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+# Se concatena a df_final
+df_final <- bind_rows(df_final, subconjunto_datos_reales)
+```
+
+```{r, message=FALSE}
+# Se muestra la distribución de las variables por cada nivel de facilidad_aparcamiento
+dist_variables_por_facilidad_aparcamiento(subconjunto_aux[c(var_num_cluster,"facilidad_aparcamiento")])
+```
+
+A continuación se lleva a cabo el mismo proceso para el resto de combinaciones de los valores de `int_tiempo` y `fin_de_semana`.
+
+**Segmentación de zonas de Servicio de Estacionamiento Regulado un día en fin de semana por la mañana**
+
+```{r, warning=FALSE}
+subconjunto_aux <- df_aparcamiento_escalado %>%
+  filter(int_tiempo == 0, fin_de_semana == 1) %>%
+  select(-int_tiempo,-fin_de_semana) %>%
+  mutate(across(everything(),as.numeric))
+
+subconjunto_datos_reales <- df_aparcamiento %>%
+  filter(int_tiempo == 0, fin_de_semana == 1)
+
+estudio_valores_k(2:7, subconjunto_aux)
+
+clusterboot(subconjunto_aux, B = 100, bootmethod = "boot", clustermethod = kmeansCBI, krange = 3, seed = 7, count = FALSE,)
+
+kmeans_final <- kmeans(subconjunto_aux, centers = 3, nstart = 20)
+
+subconjunto_aux$cluster <- kmeans_final$cluster
+subconjunto_datos_reales$cluster <- kmeans_final$cluster
+```
+
+
+```{r}
+lista <- interpretacion_cluster(subconjunto_aux)
+
+df_facilidad_aparcamiento <- lista$df_facilidad_aparcamiento
+datatable(df_facilidad_aparcamiento, options = list(pageLength = 3, scrollX = TRUE, autoWidth = TRUE))
+
+ggplot(lista$porcentaje_por_cluster, aes(x=porcentaje, y=factor(cluster))) +
+  geom_bar(stat="identity", fill="steelblue") +
+  geom_text(aes(label=sprintf("%.2f%%", porcentaje))) +
+  xlab("Porcentaje (%)") + ylab("Cluster") +
+  ggtitle("Distribución por cluster") +
+  theme_minimal()
+
+etiqueta_cluster <- df_facilidad_aparcamiento %>%
+  select(cluster, facilidad_aparcamiento)
+
+subconjunto_datos_reales <- subconjunto_datos_reales %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+subconjunto_aux <- subconjunto_aux %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+# Se concatena a df_final
+df_final <- bind_rows(df_final, subconjunto_datos_reales)
+```
+
+```{r, warning=FALSE}
+dist_variables_por_facilidad_aparcamiento(subconjunto_aux[c(var_num_cluster,"facilidad_aparcamiento")])
+```
+
+**Segmentación de zonas de Servicio de Estacionamiento Regulado un día entre semana al mediodía**
+
+```{r, warning=FALSE}
+subconjunto_aux <- df_aparcamiento_escalado %>%
+  filter(int_tiempo == 1, fin_de_semana == 0) %>%
+  select(-int_tiempo,-fin_de_semana) %>%
+  mutate(across(everything(),as.numeric))
+
+subconjunto_datos_reales <- df_aparcamiento %>%
+  filter(int_tiempo == 1, fin_de_semana == 0)
+
+estudio_valores_k(2:7, subconjunto_aux)
+
+clusterboot(subconjunto_aux, B = 100, bootmethod = "boot", clustermethod = kmeansCBI, krange = 3, seed = 7, count = FALSE,)
+
+kmeans_final <- kmeans(subconjunto_aux, centers = 3, nstart = 20)
+
+subconjunto_aux$cluster <- kmeans_final$cluster
+subconjunto_datos_reales$cluster <- kmeans_final$cluster
+```
+
+```{r, warning=FALSE}
+lista <- interpretacion_cluster(subconjunto_aux)
+
+datatable(df_facilidad_aparcamiento, options = list(pageLength = 3, scrollX = TRUE, autoWidth = TRUE))
+
+ggplot(lista$porcentaje_por_cluster, aes(x=porcentaje, y=factor(cluster))) +
+  geom_bar(stat="identity", fill="steelblue") +
+  geom_text(aes(label=sprintf("%.2f%%", porcentaje))) +
+  xlab("Porcentaje (%)") + ylab("Cluster") +
+  ggtitle("Distribución por cluster") +
+  theme_minimal()
+
+etiqueta_cluster <- df_facilidad_aparcamiento %>%
+  select(cluster, facilidad_aparcamiento)
+
+subconjunto_datos_reales <- subconjunto_datos_reales %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+subconjunto_aux <- subconjunto_aux %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+df_final <- bind_rows(df_final, subconjunto_datos_reales)
+```
+
+```{r, message=FALSE}
+dist_variables_por_facilidad_aparcamiento(subconjunto_aux[c(var_num_cluster,"facilidad_aparcamiento")])
+```
+
+**Segmentación de zonas de Servicio de Estacionamiento Regulado un día en fin de semana al mediodía**
+
+```{r, warning=FALSE}
+subconjunto_aux <- df_aparcamiento_escalado %>%
+  filter(int_tiempo == 1, fin_de_semana == 1) %>%
+  select(-int_tiempo,-fin_de_semana) %>%
+  mutate(across(everything(),as.numeric))
+
+subconjunto_datos_reales <- df_aparcamiento %>%
+  filter(int_tiempo == 1, fin_de_semana == 1)
+
+estudio_valores_k(2:7, subconjunto_aux)
+
+clusterboot(subconjunto_aux, B = 100, bootmethod = "boot", clustermethod = kmeansCBI, krange = 3, seed = 7, count = FALSE,)
+
+kmeans_final <- kmeans(subconjunto_aux, centers = 3, nstart = 20)
+
+subconjunto_aux$cluster <- kmeans_final$cluster
+subconjunto_datos_reales$cluster <- kmeans_final$cluster
+```
+
+
+```{r, warning=FALSE}
+lista <- interpretacion_cluster(subconjunto_aux)
+
+df_facilidad_aparcamiento <- lista$df_facilidad_aparcamiento
+datatable(df_facilidad_aparcamiento, options = list(pageLength = 3, scrollX = TRUE, autoWidth = TRUE))
+
+ggplot(lista$porcentaje_por_cluster, aes(x=porcentaje, y=factor(cluster))) +
+  geom_bar(stat="identity", fill="steelblue") +
+  geom_text(aes(label=sprintf("%.2f%%", porcentaje))) +
+  xlab("Porcentaje (%)") + ylab("Cluster") +
+  ggtitle("Distribución por cluster") +
+  theme_minimal()
+
+etiqueta_cluster <- df_facilidad_aparcamiento %>%
+  select(cluster, facilidad_aparcamiento)
+
+subconjunto_datos_reales <- subconjunto_datos_reales %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+subconjunto_aux <- subconjunto_aux %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+df_final <- bind_rows(df_final, subconjunto_datos_reales)
+```
+
+```{r, message=FALSE}
+dist_variables_por_facilidad_aparcamiento(subconjunto_aux[c(var_num_cluster,"facilidad_aparcamiento")])
+```
+
+**Segmentación de zonas de Servicio de Estacionamiento Regulado un día entre semana por la tarde**
+
+```{r, warning=FALSE}
+subconjunto_aux <- df_aparcamiento_escalado %>%
+  filter(int_tiempo == 2, fin_de_semana == 0) %>%
+  select(-int_tiempo,-fin_de_semana) %>%
+  mutate(across(everything(),as.numeric))
+
+subconjunto_datos_reales <- df_aparcamiento %>%
+  filter(int_tiempo == 2, fin_de_semana == 0)
+
+estudio_valores_k(2:7, subconjunto_aux)
+
+clusterboot(subconjunto_aux, B = 100, bootmethod = "boot", clustermethod = kmeansCBI, krange = 3, seed = 7, count = FALSE,)
+
+
+kmeans_final <- kmeans(subconjunto_aux, centers = 3, nstart = 20)
+
+subconjunto_aux$cluster <- kmeans_final$cluster
+subconjunto_datos_reales$cluster <- kmeans_final$cluster
+```
+
+
+```{r, warning=FALSE}
+lista <- interpretacion_cluster(subconjunto_aux)
+
+datatable(df_facilidad_aparcamiento, options = list(pageLength = 3, scrollX = TRUE, autoWidth = TRUE))
+
+df_facilidad_aparcamiento <- lista$df_facilidad_aparcamiento
+
+ggplot(lista$porcentaje_por_cluster, aes(x=porcentaje, y=factor(cluster))) +
+  geom_bar(stat="identity", fill="steelblue") +
+  geom_text(aes(label=sprintf("%.2f%%", porcentaje))) +
+  xlab("Porcentaje (%)") + ylab("Cluster") +
+  ggtitle("Distribución por cluster") +
+  theme_minimal()
+
+etiqueta_cluster <- df_facilidad_aparcamiento %>%
+  select(cluster, facilidad_aparcamiento)
+
+subconjunto_datos_reales <- subconjunto_datos_reales %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+subconjunto_aux <- subconjunto_aux %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+df_final <- bind_rows(df_final, subconjunto_datos_reales)
+```
+
+```{r, message=FALSE}
+dist_variables_por_facilidad_aparcamiento(subconjunto_aux[c(var_num_cluster,"facilidad_aparcamiento")])
+```
+
+**Segmentación de zonas de Servicio de Estacionamiento Regulado un día en fin de semana por la tarde**
+
+```{r, warning=FALSE}
+subconjunto_aux <- df_aparcamiento_escalado %>%
+  filter(int_tiempo == 2, fin_de_semana == 1) %>%
+  select(-int_tiempo,-fin_de_semana) %>%
+  mutate(across(everything(),as.numeric))
+
+subconjunto_datos_reales <- df_aparcamiento %>%
+  filter(int_tiempo == 2, fin_de_semana == 1)
+
+estudio_valores_k(2:7, subconjunto_aux)
+
+clusterboot(subconjunto_aux, B = 100, bootmethod = "boot", clustermethod = kmeansCBI, krange = 3, seed = 7, count = FALSE,)
+
+kmeans_final <- kmeans(subconjunto_aux, centers = 3, nstart = 20)
+
+subconjunto_aux$cluster <- kmeans_final$cluster
+subconjunto_datos_reales$cluster <- kmeans_final$cluster
+```
+
+
+```{r, warning=FALSE}
+lista <- interpretacion_cluster(subconjunto_aux)
+
+df_facilidad_aparcamiento <- lista$df_facilidad_aparcamiento 
+
+datatable(df_facilidad_aparcamiento, options = list(pageLength = 3, scrollX = TRUE, autoWidth = TRUE))
+
+ggplot(lista$porcentaje_por_cluster, aes(x=porcentaje, y=factor(cluster))) +
+  geom_bar(stat="identity", fill="steelblue") +
+  geom_text(aes(label=sprintf("%.2f%%", porcentaje))) +
+  xlab("Porcentaje (%)") + ylab("Cluster") +
+  ggtitle("Distribución por cluster") +
+  theme_minimal()
+
+etiqueta_cluster <- df_facilidad_aparcamiento %>%
+  select(cluster, facilidad_aparcamiento)
+
+subconjunto_datos_reales <- subconjunto_datos_reales %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+subconjunto_aux <- subconjunto_aux %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+df_final <- bind_rows(df_final, subconjunto_datos_reales)
+```
+
+```{r, message=FALSE}
+dist_variables_por_facilidad_aparcamiento(subconjunto_aux[c(var_num_cluster,"facilidad_aparcamiento")])
+```
+
+**Segmentación de zonas de Servicio de Estacionamiento Regulado un día entre semana por la noche**
+
+```{r, warning=FALSE}
+subconjunto_aux <- df_aparcamiento_escalado %>%
+  filter(int_tiempo == 3, fin_de_semana == 0) %>%
+  select(-int_tiempo,-fin_de_semana) %>%
+  mutate(across(everything(),as.numeric))
+
+subconjunto_datos_reales <- df_aparcamiento %>%
+  filter(int_tiempo == 3, fin_de_semana == 0)
+
+estudio_valores_k(2:7, subconjunto_aux)
+
+clusterboot(subconjunto_aux, B = 100, bootmethod = "boot", clustermethod = kmeansCBI, krange = 3, seed = 7, count = FALSE,)
+
+kmeans_final <- kmeans(subconjunto_aux, centers = 3, nstart = 20)
+
+subconjunto_aux$cluster <- kmeans_final$cluster
+subconjunto_datos_reales$cluster <- kmeans_final$cluster
+```
+
+```{r, warning=FALSE}
+lista <- interpretacion_cluster(subconjunto_aux)
+
+datatable(df_facilidad_aparcamiento, options = list(pageLength = 3, scrollX = TRUE, autoWidth = TRUE))
+
+df_facilidad_aparcamiento <- lista$df_facilidad_aparcamiento
+
+ggplot(lista$porcentaje_por_cluster, aes(x=porcentaje, y=factor(cluster))) +
+  geom_bar(stat="identity", fill="steelblue") +
+  geom_text(aes(label=sprintf("%.2f%%", porcentaje))) +
+  xlab("Porcentaje (%)") + ylab("Cluster") +
+  ggtitle("Distribución por cluster") +
+  theme_minimal()
+
+etiqueta_cluster <- df_facilidad_aparcamiento %>%
+  select(cluster, facilidad_aparcamiento)
+
+subconjunto_datos_reales <- subconjunto_datos_reales %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+subconjunto_aux <- subconjunto_aux %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+
+# Se concatena a df_final
+df_final <- bind_rows(df_final, subconjunto_datos_reales)
+```
+
+```{r, message=FALSE}
+dist_variables_por_facilidad_aparcamiento(subconjunto_aux[c(var_num_cluster,"facilidad_aparcamiento")])
+```
+
+**Segmentación de zonas de Servicio de Estacionamiento Regulado un día de fin de semana por la noche**
+
+```{r, warning=FALSE}
+subconjunto_aux <- df_aparcamiento_escalado %>%
+  filter(int_tiempo == 3, fin_de_semana == 1) %>%
+  select(-int_tiempo,-fin_de_semana) %>%
+  mutate(across(everything(),as.numeric))
+
+subconjunto_datos_reales <- df_aparcamiento %>%
+  filter(int_tiempo == 3, fin_de_semana == 1)
+
+estudio_valores_k(2:7, subconjunto_aux)
+
+clusterboot(subconjunto_aux, B = 100, bootmethod = "boot", clustermethod = kmeansCBI, krange = 3, seed = 7, count = FALSE,)
+
+kmeans_final <- kmeans(subconjunto_aux, centers = 3, nstart = 20)
+
+subconjunto_aux$cluster <- kmeans_final$cluster
+subconjunto_datos_reales$cluster <- kmeans_final$cluster
+```
+
+```{r, warning=FALSE}
+lista <- interpretacion_cluster(subconjunto_aux)
+
+df_facilidad_aparcamiento <- lista$df_facilidad_aparcamiento
+datatable(df_facilidad_aparcamiento, options = list(pageLength = 3, scrollX = TRUE, autoWidth = TRUE))
+
+ggplot(lista$porcentaje_por_cluster, aes(x=porcentaje, y=factor(cluster))) +
+  geom_bar(stat="identity", fill="steelblue") +
+  geom_text(aes(label=sprintf("%.2f%%", porcentaje))) +
+  xlab("Porcentaje (%)") + ylab("Cluster") +
+  ggtitle("Distribución por cluster") +
+  theme_minimal()
+
+etiqueta_cluster <- df_facilidad_aparcamiento %>%
+  select(cluster, facilidad_aparcamiento)
+
+subconjunto_datos_reales <- subconjunto_datos_reales %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+subconjunto_aux <- subconjunto_aux %>%
+  left_join(etiqueta_cluster, by = "cluster")
+
+df_final <- bind_rows(df_final, subconjunto_datos_reales)
+```
+
+```{r, message=FALSE}
+dist_variables_por_facilidad_aparcamiento(subconjunto_aux[c(var_num_cluster,"facilidad_aparcamiento")])
+```
+
+Como conclusión, se puede observar en los gráficos de las distribuciones de las variables por los niveles de `facilidad_aparcamiento` que, en general, el nivel Alto corresponde a valores mayores de la variable `log_numero_plazas`, y menores valores de tráfico. Por el contrario, el nivel Bajo, tiene valores más altos de ratio de intensidad y media de ocupación y menor número de plazas y el nivel Medio, se trata de valores altos de tráfico pero también con un número de plazas elevado. También se ve en los porcentajes de registros por *cluster* que en los días entre semana el nivel de facilidad de aparcamiento bajo predomina para los intervalos de la mañana, mediodía y tarde, indicando que son los grupos temporales en los que encontrar aparcamiento supone mayor dificultad. Así, los resultados obtenidos indica que es más fácil encontrar aparcamiento por las noches o en fin de semana.
+
+```{r}
+# Se muestra la estructura del dataframe final
+glimpse(df_final)
+```
+
+```{r}
+# Se almacena para poder usarlo en la aplicación
+write.csv(df_final, "df_final.csv", row.names = FALSE)
+```
+
+A efectos de reproducibilidad del código se incluye la información de la sesión.
+
+```{r}
+sessionInfo()
+```
